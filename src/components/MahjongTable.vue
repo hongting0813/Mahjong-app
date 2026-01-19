@@ -1,0 +1,135 @@
+<template>
+  <div class="table-view" :style="{ background: store.settings.bgColor }">
+    <div class="header">
+      <div class="room-info">房號: {{ store.roomId }} (底{{ store.settings.base }}/台{{ store.settings.tai }})</div>
+      <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
+    </div>
+
+    <div class="table-area">
+      <div class="mahjong-table">
+        <div class="center-zone" @click="showActionModal = true">
+          <div class="center-content">
+            <div class="logo">🀄️</div>
+            <div>記帳</div>
+          </div>
+        </div>
+
+        <div 
+          v-for="(p, index) in store.rotatedPlayers" 
+          :key="p.id"
+          class="player-seat"
+          :class="getPositionClass(index)"
+        >
+          <div class="avatar-wrapper" :class="{ 'winner': p.score > 0, 'loser': p.score < 0 }">
+            {{ p.avatar }}
+            <div class="score-badge">{{ p.score }}</div>
+          </div>
+          <div class="p-name">{{ p.name }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="logs-panel">
+      <div class="logs-title">戰況速報</div>
+      <div class="logs-list">
+        <div v-for="log in store.logs" :key="log.id" class="log-item">
+          <span class="time">{{ log.time }}</span>
+          <span class="desc">{{ log.winner }} {{ log.desc }}</span>
+          <span class="amt">+{{ log.amount }}</span>
+        </div>
+      </div>
+    </div>
+
+    <van-dialog v-model:show="showQr" title="掃描加入房間" show-confirm-button>
+      <div class="qr-container">
+        <qrcode-vue :value="joinUrl" :size="200" level="H" />
+        <p>請讓朋友掃描此碼</p>
+      </div>
+    </van-dialog>
+
+    <van-action-sheet v-model:show="showActionModal" title="戰績輸入">
+       <div style="padding: 20px; text-align: center;">
+         <van-button type="primary" block @click="quickTestWin">測試：我自摸 1 台</van-button>
+       </div>
+    </van-action-sheet>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue';
+import { useGameStore } from '../stores/gameStore';
+import QrcodeVue from 'qrcode.vue';
+
+const store = useGameStore();
+const showQr = ref(false);
+const showActionModal = ref(false);
+
+// 產生連結 (假設跑在 Localhost)
+const joinUrl = computed(() => `${window.location.origin}/?room=${store.roomId}`);
+
+const getPositionClass = (index) => {
+  const positions = ['seat-bottom', 'seat-right', 'seat-top', 'seat-left'];
+  return positions[index];
+};
+
+const quickTestWin = () => {
+  store.settleRound(store.myPlayerId, null, 1); // 測試用
+  showActionModal.value = false;
+};
+</script>
+
+<style lang="scss" scoped>
+/* 這裡沿用之前的 CSS，但加入 Avatar 樣式 */
+.table-view { min-height: 100vh; display: flex; flex-direction: column; color: white; transition: background 0.3s; }
+.header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); }
+
+.table-area { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; }
+.mahjong-table { 
+  width: 320px; height: 320px; 
+  background: rgba(255,255,255,0.1); 
+  border: 6px solid rgba(0,0,0,0.3);
+  border-radius: 20px;
+  position: relative; 
+}
+
+.center-zone {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 100px; height: 100px; border: 2px dashed rgba(255,255,255,0.4);
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  .logo { font-size: 40px; }
+}
+
+.player-seat {
+  position: absolute;
+  display: flex; flex-direction: column; align-items: center;
+  width: 80px;
+  
+  .avatar-wrapper {
+    font-size: 40px; width: 60px; height: 60px; background: white; border-radius: 50%;
+    display: flex; justify-content: center; align-items: center; position: relative;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border: 3px solid white;
+    
+    &.winner { border-color: #ee0a24; animation: pop 0.3s; }
+    &.loser { border-color: #07c160; }
+    
+    .score-badge {
+      position: absolute; bottom: -5px; right: -10px;
+      background: #333; color: white; font-size: 12px; padding: 2px 6px; border-radius: 10px;
+      font-weight: bold;
+    }
+  }
+  .p-name { margin-top: 5px; font-size: 12px; text-shadow: 0 1px 2px black; }
+}
+
+/* 定位 */
+.seat-bottom { bottom: -40px; left: 50%; transform: translateX(-50%); }
+.seat-top { top: -40px; left: 50%; transform: translateX(-50%); }
+.seat-right { right: -40px; top: 50%; transform: translateY(-50%); }
+.seat-left { left: -40px; top: 50%; transform: translateY(-50%); }
+
+.qr-container { text-align: center; padding: 20px; }
+.logs-panel { background: rgba(0,0,0,0.5); padding: 10px; height: 150px; overflow-y: auto; }
+.log-item { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; }
+.amt { color: #f1c40f; font-weight: bold; }
+</style>
