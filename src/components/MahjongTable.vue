@@ -6,7 +6,7 @@
     </div>
 
     <div class="table-area">
-      <div class="mahjong-table">
+      <div class="mahjong-table" :style="{ transform: `scale(${tableScale})` }">
         <div class="center-zone" @click="showActionModal = true">
           <div class="center-content">
             <div class="logo">🀄️</div>
@@ -56,13 +56,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
 
 const store = useGameStore();
 const showQr = ref(false);
 const showActionModal = ref(false);
+const tableScale = ref(1);
 
 // 產生連結 (假設跑在 Localhost)
 const joinUrl = computed(() => `${window.location.origin}/?room=${store.roomId}`);
@@ -76,6 +77,27 @@ const quickTestWin = () => {
   store.settleRound(store.myPlayerId, null, 1); // 測試用
   showActionModal.value = false;
 };
+
+const updateScale = () => {
+  // 320 (table) + 40*2 (seats) + 20 (safe margin) = 420
+  const requiredWidth = 420;
+  const availableWidth = window.innerWidth;
+  
+  if (availableWidth < requiredWidth) {
+    tableScale.value = availableWidth / requiredWidth;
+  } else {
+    tableScale.value = 1;
+  }
+};
+
+onMounted(() => {
+  updateScale();
+  window.addEventListener('resize', updateScale);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateScale);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -83,13 +105,15 @@ const quickTestWin = () => {
 .table-view { min-height: 100vh; display: flex; flex-direction: column; color: white; transition: background 0.3s; }
 .header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); }
 
-.table-area { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; }
+.table-area { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; overflow: hidden; }
 .mahjong-table { 
   width: 320px; height: 320px; 
   background: rgba(255,255,255,0.1); 
   border: 6px solid rgba(0,0,0,0.3);
   border-radius: 20px;
   position: relative; 
+  /* Ensure transform origin is center so it scales nicely */
+  transform-origin: center center;
 }
 
 .center-zone {
