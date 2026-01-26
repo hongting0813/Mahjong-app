@@ -1,7 +1,7 @@
 <template>
   <div class="table-view" :style="{ background: store.settings.bgColor }">
     <div class="header">
-      <div class="room-info">房號: {{ store.roomId }} (底{{ store.settings.base }}/台{{ store.settings.tai }})</div>
+      <div class="room-info">底{{ store.settings.base }}/台{{ store.settings.tai }}</div>
       <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
     </div>
 
@@ -40,10 +40,16 @@
       </div>
     </div>
 
-    <van-dialog v-model:show="showQr" title="掃描加入房間" show-confirm-button>
+    <van-dialog 
+      v-model:show="showQr" 
+      title="掃描加入房間" 
+      :show-confirm-button="false"
+      close-on-click-overlay
+    >
       <div class="qr-container">
         <qrcode-vue :value="joinUrl" :size="200" level="H" />
-        <p>請讓朋友掃描此碼</p>
+        <p style="margin: 15px 0; color: #666;">請讓朋友掃描此碼</p>
+        <van-button icon="link" round size="small" @click="copyLink">複製連結</van-button>
       </div>
     </van-dialog>
 
@@ -59,6 +65,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
+import { showToast } from 'vant';
 
 const store = useGameStore();
 const showQr = ref(false);
@@ -67,6 +74,49 @@ const tableScale = ref(1);
 
 // 產生連結 (假設跑在 Localhost)
 const joinUrl = computed(() => `${window.location.origin}/?room=${store.roomId}`);
+
+// 強化版複製功能 (支援 HTTP/IP 環境)
+const copyLink = async () => {
+  const text = joinUrl.value;
+  
+  // 1. 嘗試使用現代 API
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast({ message: '已複製連結', type: 'success' });
+      return;
+    } catch (err) {
+      console.warn('Clipboard API failed, trying fallback...');
+    }
+  }
+
+  // 2. Fallback: 使用舊版 textarea 方式
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    
+    // 避免畫面跳動
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    
+    if (successful) {
+      showToast({ message: '已複製連結', type: 'success' });
+    } else {
+      throw new Error('execCommand failed');
+    }
+  } catch (err) {
+    console.error('Copy failed', err);
+    showToast({ message: '複製失敗，請手動複製', type: 'fail' });
+  }
+};
 
 const getPositionClass = (index) => {
   const positions = ['seat-bottom', 'seat-right', 'seat-top', 'seat-left'];

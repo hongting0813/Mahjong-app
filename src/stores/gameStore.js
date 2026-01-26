@@ -8,64 +8,86 @@ export const useGameStore = defineStore('game', () => {
   const roomId = ref(null);
   const myPlayerId = ref(null); // 我選擇的座位 ID (0~3)
   const isConnected = ref(false); // 連線狀態亮燈用
+  const errorMsg = ref('');
 
   // 遊戲資料 (會從後端同步)
   const settings = ref({ base: 0, tai: 0, bgColor: '#0b6623' });
   const players = ref([]); // 原始順序的玩家列表
   const logs = ref([]);
 
+  // 內部變數
+  let isCreating = false;
+  let pendingRoomId = null;
+
   // --- Actions (動作) ---
 
-  /**
-   * 1. 連線並加入房間
-   * @param {string} room - 房號
-   */
-  const connectAndJoin = (room) => {
-    // 如果已經連線過，不要重複連線
-    if (socket.value && socket.value.connected) {
-        console.log('Socket 已經連線，跳過重連');
-        socket.value.emit('join_room', room);
-        return;
+  // 同步資料的輔助函式
+  const syncData = (data) => {
+    if (!data) return;
+    if (data.settings) settings.value = data.settings;
+    if (data.players) players.value = data.players;
+    if (data.logs) logs.value = data.logs;
+  };
+
+  const setupSocketListeners = () => {
+    // 移除舊的監聽器，避免重複
+    if (socket.value) {
+      socket.value.off('connect');
+      socket.value.off('connect_error');
+      socket.value.off('error');
+      socket.value.off('init_state');
+      socket.value.off('state_updated');
+      socket.value.off('disconnect');
     }
-
-    roomId.value = room;
-
-    // ✨ 自動判斷連線網址
-    // 如果瀏覽器網址是 http://localhost:5173，就連 http://localhost:3001
-    // 如果瀏覽器網址是 http://192.168.1.5:5173，就連 http://192.168.1.5:3001
-    const currentDomain = window.location.hostname;
-    const socketUrl = `http://${currentDomain}:3001`;
-
-    console.log(`🚀 準備連線到後端: ${socketUrl}`);
-
-    // 建立 Socket 連線
-    socket.value = io(socketUrl, {
-      transports: ['websocket'], // 強制使用 WebSocket，減少 CORS 問題
-      reconnectionAttempts: 5    // 斷線重試 5 次
-    });
-
-    // --- 監聽 Socket 事件 ---
 
     // A. 連線成功
     socket.value.on('connect', () => {
       console.log(`✅ Socket 連線成功！ID: ${socket.value.id}`);
       isConnected.value = true;
-      
-      // 連線後馬上加入房間
-      console.log(`正在加入房間: ${roomId.value}`);
-      socket.value.emit('join_room', roomId.value);
+
+      const targetRoom = pendingRoomId || roomId.value;
+
+      // 連線後執行動作
+      if (isCreating) {
+        console.log(`正在建立房間: ${targetRoom}`);
+        socket.value.emit('create_room', targetRoom);
+      } else {
+        console.log(`正在加入房間: ${targetRoom}`);
+        socket.value.emit('join_room', targetRoom);
+      }
     });
 
     // B. 連線錯誤
     socket.value.on('connect_error', (err) => {
       console.error(`❌ 連線失敗: ${err.message}`);
       isConnected.value = false;
+      errorMsg.value = `連線失敗: ${err.message}`;
+      pendingRoomId = null;
+    });
+
+    // B2. 業務邏輯錯誤 (如房間不存在)
+    socket.value.on('error', (msg) => {
+      console.error(`❌ 伺服器錯誤: ${msg}`);
+      errorMsg.value = msg;
+
+      // 如果是房間不存在，清空 roomId 以便 UI 處理
+      if (msg === 'Room not found') {
+        roomId.value = null;
+        pendingRoomId = null;
+      }
     });
 
     // C. 接收初始化資料 (剛進房時)
     socket.value.on('init_state', (data) => {
       console.log('📦 收到房間資料:', data);
       syncData(data);
+      errorMsg.value = ''; // 清除錯誤
+
+      // 確認加入成功，更新 roomId
+      if (pendingRoomId) {
+        roomId.value = pendingRoomId;
+        pendingRoomId = null;
+      }
     });
 
     // D. 接收更新資料 (有人記帳或改設定時)
@@ -81,12 +103,55 @@ export const useGameStore = defineStore('game', () => {
     });
   };
 
-  // 同步資料的輔助函式
-  const syncData = (data) => {
-    if (!data) return;
-    if (data.settings) settings.value = data.settings;
-    if (data.players) players.value = data.players;
-    if (data.logs) logs.value = data.logs;
+  const _connect = (room, creating = false) => {
+    isCreating = creating;
+    pendingRoomId = room;
+    errorMsg.value = ''; // 重置錯誤訊息
+
+    // 如果已經連線過且 Socket 活著，且是同一個房間 (或沒有換房)
+    if (socket.value && socket.value.connected) {
+      if (creating) {
+        socket.value.emit('create_room', room);
+      } else {
+        socket.value.emit('join_room', room);
+      }
+      return;
+    }
+
+    // ✨ 自動判斷連線網址
+    const currentDomain = window.location.hostname;
+    const socketUrl = `http://${currentDomain}:3001`;
+
+    console.log(`🚀 準備連線到後端: ${socketUrl}`);
+
+    // 建立 Socket 連線
+    if (!socket.value) {
+      socket.value = io(socketUrl, {
+        transports: ['websocket'], // 強制使用 WebSocket，減少 CORS 問題
+        reconnectionAttempts: 5    // 斷線重試 5 次
+      });
+    } else {
+      socket.value.connect();
+    }
+
+    // --- 監聽 Socket 事件 ---
+    setupSocketListeners();
+  };
+
+  /**
+   * 1. 連線並加入房間
+   * @param {string} room - 房號
+   */
+  const connectAndJoin = (room) => {
+    _connect(room, false);
+  };
+
+  /**
+   * 1.5 連線並建立房間
+   * @param {string} room - 房號
+   */
+  const createRoom = (room) => {
+    _connect(room, true);
   };
 
   /**
@@ -110,7 +175,7 @@ export const useGameStore = defineStore('game', () => {
     const amount = Number(settings.value.base) + (taiCount * Number(settings.value.tai));
     // 深拷貝一份玩家資料來計算，避免直接修改現有畫面導致閃爍，等待後端回傳才是最準的
     const newPlayers = JSON.parse(JSON.stringify(players.value));
-    
+
     let logDesc = '';
     let logAmount = 0;
     const winnerName = newPlayers.find(p => p.id === winnerId)?.name || '未知';
@@ -137,7 +202,7 @@ export const useGameStore = defineStore('game', () => {
 
     const newLog = {
       id: Date.now(),
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute:'2-digit' }),
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       winner: winnerName,
       desc: logDesc,
       amount: logAmount
@@ -176,17 +241,33 @@ export const useGameStore = defineStore('game', () => {
     ];
   });
 
-  return { 
-    socket, 
-    roomId, 
-    myPlayerId, 
-    isConnected, 
-    settings, 
-    players, 
-    logs, 
+  // 4. 重置狀態 (離開房間回到首頁時)
+  const resetState = () => {
+    roomId.value = null;
+    myPlayerId.value = null;
+    players.value = [];
+    logs.value = [];
+    errorMsg.value = '';
+    isConnected.value = false;
+    // 如果需要斷開 socket，也可以在這裡做，或保持連線
+    // socket.value?.disconnect(); 
+    // 通常保持連線沒關係，但業務邏輯要清空
+  };
+
+  return {
+    socket,
+    roomId,
+    myPlayerId,
+    isConnected,
+    errorMsg,
+    settings,
+    players,
+    logs,
     rotatedPlayers,
-    connectAndJoin, 
-    updateSettings, 
-    settleRound 
+    connectAndJoin,
+    createRoom,
+    updateSettings,
+    settleRound,
+    resetState
   };
 });

@@ -21,25 +21,43 @@ const rooms = {};
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // 1. 建立/加入房間
+  // 1. 加入房間 (Strict Mode)
   socket.on('join_room', (roomId) => {
-    socket.join(roomId);
-    
     if (!rooms[roomId]) {
-      // 如果房間不存在，建立預設資料
-      rooms[roomId] = {
-        settings: { base: 100, tai: 20, bgColor: '#0b6623' },
-        players: [
-          { id: 0, name: '玩家1', score: 0, avatar: '🀄️' },
-          { id: 1, name: '玩家2', score: 0, avatar: '🀄️' },
-          { id: 2, name: '玩家3', score: 0, avatar: '🀄️' },
-          { id: 3, name: '玩家4', score: 0, avatar: '🀄️' }
-        ],
-        logs: []
-      };
+      // 房間不存在，回傳錯誤
+      socket.emit('error', 'Room not found');
+      return;
     }
-    
+
+    socket.join(roomId);
+    console.log(`User ${socket.id} joined room ${roomId}`);
+
     // 發送最新狀態給該用戶
+    socket.emit('init_state', rooms[roomId]);
+  });
+
+  // 1.5 建立房間 (Explicit Create)
+  socket.on('create_room', (roomId) => {
+    if (rooms[roomId]) {
+      socket.emit('error', 'Room already exists');
+      return;
+    }
+
+    socket.join(roomId);
+
+    // 建立預設資料
+    rooms[roomId] = {
+      settings: { base: 100, tai: 20, bgColor: '#0b6623' },
+      players: [
+        { id: 0, name: '玩家1', score: 0, avatar: '🀄️' },
+        { id: 1, name: '玩家2', score: 0, avatar: '🀄️' },
+        { id: 2, name: '玩家3', score: 0, avatar: '🀄️' },
+        { id: 3, name: '玩家4', score: 0, avatar: '🀄️' }
+      ],
+      logs: []
+    };
+
+    console.log(`User ${socket.id} created room ${roomId}`);
     socket.emit('init_state', rooms[roomId]);
   });
 

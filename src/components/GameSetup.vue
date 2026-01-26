@@ -31,11 +31,14 @@
 
 <script setup>
 import { reactive } from 'vue';
+import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
+
+const router = useRouter();
 
 const store = useGameStore();
 const bgColors = ['#0b6623', '#2c3e50', '#8e44ad', '#c0392b']; // 綠, 藍, 紫, 紅
-const avatars = ['👨🏻', '👩🏻', '👴🏻', '👵🏻', '🐶', '🐱', '🤖', '👽'];
+const avatars = ['👨🏻', '👩🏻', '👴🏻', '👵🏻', '🧑🏻', '👱🏻‍♀️', '🐶', '🐱', '🐣', '🐰', '🐭', '🐠', '🤖', '👽', '🤡', '👻', '😈', '💩'];
 
 const form = reactive({ base: 300, tai: 50, bgColor: '#0b6623' });
 const localPlayers = reactive([
@@ -54,12 +57,15 @@ const changeAvatar = (idx) => {
 const handleCreate = () => {
   // 產生隨機房間號碼 (6位數)
   const roomId = Math.floor(100000 + Math.random() * 900000).toString();
-  store.connectAndJoin(roomId);
+  store.createRoom(roomId);
   
   // 等待連線後發送設定
   setTimeout(() => {
     store.updateSettings(form, localPlayers);
     // 預設房主是第一個位置，但為了測試，我們讓使用者自己選
+    
+    // 跳轉到房間頁面
+    router.push(`/room/${roomId}`);
   }, 500);
 };
 </script>
