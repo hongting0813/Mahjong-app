@@ -91,9 +91,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center; /* Center content vertically since it's fixed height */
   padding: 40px 20px;
-  min-height: 100vh;
-  background: white; 
+  height: 100vh; /* Fixed viewport height */
+  overflow: hidden; /* Prevent scrolling */
+  background: white;
 }
 /* ... existing styles ... */
 

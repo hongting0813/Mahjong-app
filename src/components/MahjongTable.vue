@@ -1,11 +1,11 @@
 <template>
   <div class="table-view" :style="{ background: store.settings.bgColor }">
     <div class="header">
-      <div class="room-info">底{{ store.settings.base }}/台{{ store.settings.tai }}</div>
+      <div class="room-info">底{{ store.settings.base }} / 台{{ store.settings.tai }}</div>
       <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
     </div>
 
-    <!-- 上半部：麻將桌 (固定高度/比例) -->
+    <!-- 上半部：麻將桌 (固定高度/比例，佔 60%) -->
     <div class="table-area">
       <div class="mahjong-table" :style="{ transform: `scale(${tableScale})` }">
         <div class="center-zone" @click="showActionModal = true">
@@ -30,26 +30,28 @@
       </div>
     </div>
 
-    <!-- 下半部：操作區 + 戰況 (這塊自適應剩餘空間) -->
-    <div class="bottom-panel">
-      <!-- AI 算台按鈕 (放在戰況上面) -->
-      <div class="ai-btn-area">
-        <van-button icon="photograph" type="warning" block round @click="showCamera = true">
-          AI 算台 (拍照識別)
-        </van-button>
+    <!-- 中間：操作區 (佔 10%) -->
+    <div class="action-area">
+      <div class="action-btn" @click="showCamera = true">
+        <van-icon name="photograph" size="20" />
+        <span>AI 算台</span>
       </div>
+      <div class="action-btn" @click="quickTestWin">
+        <van-icon name="fire-o" size="20" />
+        <span>自摸測試</span>
+      </div>
+    </div>
 
-      <!-- 戰況速報 (這塊滾動) -->
-      <div class="logs-wrapper">
-        <div class="logs-title">戰況速報</div>
-        <div class="logs-list">
-          <div v-for="log in store.logs" :key="log.id" class="log-item">
-            <span class="time">{{ log.time }}</span>
-            <span class="desc">{{ log.winner }} {{ log.desc }}</span>
-            <span class="amt">+{{ log.amount }}</span>
-          </div>
-          <div v-if="store.logs.length === 0" class="no-logs">暫無戰況</div>
+    <!-- 下半部：戰況 (佔 30%) -->
+    <div class="logs-panel">
+      <div class="logs-title">戰況速報</div>
+      <div class="logs-list">
+        <div v-for="log in store.logs" :key="log.id" class="log-item">
+          <span class="time">{{ log.time }}</span>
+          <span class="desc">{{ log.winner }} {{ log.desc }}</span>
+          <span class="amt">+{{ log.amount }}</span>
         </div>
+        <div v-if="store.logs.length === 0" class="no-logs">暫無戰況</div>
       </div>
     </div>
 
@@ -68,10 +70,7 @@
 
     <van-action-sheet v-model:show="showActionModal" title="戰績輸入">
        <div style="padding: 20px; text-align: center;">
-
-       </div>
-       <div style="padding: 20px; text-align: center;">
-         <van-button type="primary" block @click="quickTestWin">測試：我自摸 1 台</van-button>
+          <!-- Action sheet content -->
        </div>
     </van-action-sheet>
 
@@ -135,7 +134,7 @@ const getPositionClass = (index) => {
 
 const quickTestWin = () => {
   store.settleRound(store.myPlayerId, null, 1); // 測試用
-  showActionModal.value = false;
+  // showActionModal.value = false; // No longer needed
 };
 
 const updateScale = () => {
@@ -166,12 +165,12 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .table-view { 
-  height: 100vh; /* Fixed height */
+  height: 100%; /* Fill parent (room-content) */
   overflow: hidden; /* Prevent page scroll */
   display: flex; 
   flex-direction: column; 
   color: white; 
-  transition: background 0.3s; 
+  transition: background 0.3s;
 }
 .header { 
   flex-shrink: 0;
@@ -182,14 +181,16 @@ onUnmounted(() => {
   background: rgba(0,0,0,0.2); 
 }
 
+/* CSS Updates */
 .table-area { 
-  flex: 1; /* Takes available space */
+  flex: 6; /* 60% height */
   position: relative; 
   display: flex; 
   justify-content: center; 
   align-items: center; 
   overflow: hidden; 
-  min-height: 350px; /* Ensure space for table */
+  min-height: 0; /* Important for flex scaling */
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 .mahjong-table { 
@@ -198,66 +199,49 @@ onUnmounted(() => {
   border: 6px solid rgba(0,0,0,0.3);
   border-radius: 20px;
   position: relative; 
-  /* Ensure transform origin is center so it scales nicely */
   transform-origin: center center;
 }
 
-.center-zone {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 100px; height: 100px; border: 2px dashed rgba(255,255,255,0.4);
-  border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  .logo { font-size: 40px; }
-}
-
-.player-seat {
-  position: absolute;
-  display: flex; flex-direction: column; align-items: center;
-  width: 80px;
-  
-  .avatar-wrapper {
-    font-size: 40px; width: 60px; height: 60px; background: white; border-radius: 50%;
-    display: flex; justify-content: center; align-items: center; position: relative;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border: 3px solid white;
-    
-    &.winner { border-color: #ee0a24; animation: pop 0.3s; }
-    &.loser { border-color: #07c160; }
-    
-    .score-badge {
-      position: absolute; bottom: -5px; right: -10px;
-      background: #333; color: white; font-size: 12px; padding: 2px 6px; border-radius: 10px;
-      font-weight: bold;
-    }
-  }
-  .p-name { margin-top: 5px; font-size: 12px; text-shadow: 0 1px 2px black; }
-}
-
-/* 定位 */
+/* ... (Seat styles unchanged) ... */
+.center-zone { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100px; height: 100px; border: 2px dashed rgba(255,255,255,0.4); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; .logo { font-size: 40px; } }
+.player-seat { position: absolute; display: flex; flex-direction: column; align-items: center; width: 80px; .avatar-wrapper { font-size: 40px; width: 60px; height: 60px; background: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.3); border: 3px solid white; &.winner { border-color: #ee0a24; animation: pop 0.3s; } &.loser { border-color: #07c160; } .score-badge { position: absolute; bottom: -5px; right: -10px; background: #333; color: white; font-size: 12px; padding: 2px 6px; border-radius: 10px; font-weight: bold; } } .p-name { margin-top: 5px; font-size: 12px; text-shadow: 0 1px 2px black; } }
 .seat-bottom { bottom: -40px; left: 50%; transform: translateX(-50%); }
 .seat-top { top: -40px; left: 50%; transform: translateX(-50%); }
 .seat-right { right: -40px; top: 50%; transform: translateY(-50%); }
 .seat-left { left: -40px; top: 50%; transform: translateY(-50%); }
 
-/* Bottom Panel - Container for AI button and logs */
-.bottom-panel {
-  flex-shrink: 0;
+/* Middle Action Area (10%) */
+.action-area {
+  flex: 1; /* 10% approx */
+  display: flex;
+  align-items: center;
+  justify-content: space-around; /* Distribute buttons */
+  background: rgba(0,0,0,0.2);
+  padding: 0 10px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(255,255,255,0.15); /* Semi-transparent */
+  border-radius: 20px;
+  cursor: pointer;
+  
+  &:active { background: rgba(255,255,255,0.3); }
+  
+  span { font-size: 14px; font-weight: bold; }
+}
+
+/* Bottom logs panel (30%) */
+.logs-panel {
+  flex: 3; /* 30% height */
   display: flex;
   flex-direction: column;
   background: rgba(0,0,0,0.3);
-  max-height: 40vh; /* Limit height so table remains visible */
-}
-
-.ai-btn-area {
-  padding: 10px 20px;
-  background: rgba(0,0,0,0.1); 
-}
-
-.logs-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden; /* Important for inner scroll */
-  padding-bottom: 20px; /* Safe area padding */
+  overflow: hidden;
+  min-height: 0;
 }
 
 .logs-title {
@@ -269,7 +253,7 @@ onUnmounted(() => {
 
 .logs-list {
   flex: 1;
-  overflow-y: auto; /* Scroll ONLY here */
+  overflow-y: auto;
   padding: 0 15px;
 }
 

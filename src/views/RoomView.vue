@@ -6,12 +6,9 @@
       left-text="首頁"
       left-arrow
       @click-left="goHome"
-      fixed
-      placeholder
-      z-index="100"
+      :border="false"
     />
-    <!-- 如果不想在打牌時顯示 NavBar，可以用 v-if 控制，或者設計收合 -->
-    <!-- 這裡假設打牌時 (MahjongTable) 可能有自己的 header 或全螢幕，這裏先簡單處理 -->
+    <!-- Navbar is now part of the flow, no fixed/placeholder needed -->
 
     <div class="room-content">
       <SeatSelector v-if="store.myPlayerId === null" />
@@ -50,10 +47,17 @@ onMounted(() => {
 
 <style scoped>
 .room-container {
-  min-height: 100vh;
+  height: 100vh; /* Fixed viewport height */
+  display: flex;
+  flex-direction: column;
   background: #f0f2f5;
+  overflow: hidden; /* Prevent body scroll */
 }
 .room-content {
-    /* 如果有 nav bar placeholder，這裡不需要額外 padding-top，否則需要 */
+  flex: 1; /* Fill remaining space */
+  overflow: hidden; /* Or auto if you want internal scroll, but MahjongTable handles it */
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 </style>

@@ -24,7 +24,10 @@ const goHome = () => {
 
 <style scoped>
 .page-container {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: #f0f2f5;
+  display: flex;
+  flex-direction: column; 
 }
 </style>

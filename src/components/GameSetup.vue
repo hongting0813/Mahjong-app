@@ -70,7 +70,7 @@ const handleCreate = () => {
 };
 </script>
 <style scoped>
-.setup-container { padding: 20px 0; background: #f0f2f5; min-height: 100vh; }
+.setup-container { padding: 20px 0; background: #f0f2f5; flex: 1; overflow-y: auto; }
 .color-picker { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; }
 .color-dot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 .color-dot.active { transform: scale(1.2); border-color: #333; }
