@@ -1,20 +1,72 @@
 import express from 'express';
-import { createServer } from 'http';
+import { createServer } from 'https'; // ⚠️ 改用 https
 import { Server } from 'socket.io';
 import cors from 'cors';
 import os from 'os';
+import axios from 'axios';
+import fs from 'fs'; // ⚠️ 引入檔案讀取
 
 const app = express();
-app.use(cors());
 
-const httpServer = createServer(app);
+// 1. 設定傳輸限制 (50MB)
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// 2. 讀取剛剛產生的憑證
+const httpsOptions = {
+  key: fs.readFileSync('./key.pem'),
+  cert: fs.readFileSync('./cert.pem')
+};
+
+// 3. 建立 HTTPS 伺服器
+const httpServer = createServer(httpsOptions, app);
+
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // 允許所有來源連線 (開發方便)，正式上線建議改成你的前端網址
-    methods: ["GET", "POST"]
+    origin: "*",
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  allowEIO3: true
+});
+
+// --- AI 辨識 API ---
+// server.js 中的 /api/predict 區塊
+app.post('/api/predict', async (req, res) => {
+  try {
+    const { image } = req.body;
+
+    if (!image) return res.status(400).json({ error: '沒有收到圖片' });
+
+    // 設定 API 資訊
+    const roboflowUrl = "https://detect.roboflow.com/mahjong-baq4s/77";
+    const apiKey = "i0NDeTeRyF2TXqfWUpym"; // ⚠️ 注意：正式上線請放入環境變數
+
+    console.log("正在發送圖片至 Roboflow...");
+
+    const response = await axios({
+      method: "POST",
+      url: roboflowUrl,
+      params: {
+        api_key: apiKey,
+        confidence: 40, // 信心度門檻 (40%)
+        overlap: 50     // ✨ 關鍵：允許 50% 重疊 (解決牌靠很近的問題)
+      },
+      data: image,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+    });
+
+    console.log("辨識成功，物件數:", response.data.predictions.length);
+    res.json(response.data);
+
+  } catch (error) {
+    console.error("AI 辨識失敗:", error.message);
+    res.status(500).json({ error: 'AI 服務錯誤' });
   }
 });
 
+// --- Socket.io ---
 // 暫存房間資料
 const rooms = {};
 
@@ -102,8 +154,8 @@ httpServer.listen(PORT, '0.0.0.0', () => { // 加上 '0.0.0.0' 允許外部連�
   console.log(`
   🚀 後端伺服器已啟動！
   -----------------------------------------
-  🏠 本機連線: http://localhost:${PORT}
-  📡 區域網路: http://${ip}:${PORT}  <-- 前端請連這個 IP
+  🏠 本機連線: https://localhost:${PORT}
+  📡 區域網路: https://${ip}:${PORT}  <-- 前端請連這個 IP
   -----------------------------------------
   `);
 });

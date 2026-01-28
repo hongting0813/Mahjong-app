@@ -120,7 +120,7 @@ export const useGameStore = defineStore('game', () => {
 
     // ✨ 自動判斷連線網址
     const currentDomain = window.location.hostname;
-    const socketUrl = `http://${currentDomain}:3001`;
+    const socketUrl = `https://${currentDomain}:3001`;
 
     console.log(`🚀 準備連線到後端: ${socketUrl}`);
 

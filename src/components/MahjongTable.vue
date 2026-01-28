@@ -5,6 +5,7 @@
       <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
     </div>
 
+    <!-- 上半部：麻將桌 (固定高度/比例) -->
     <div class="table-area">
       <div class="mahjong-table" :style="{ transform: `scale(${tableScale})` }">
         <div class="center-zone" @click="showActionModal = true">
@@ -29,13 +30,25 @@
       </div>
     </div>
 
-    <div class="logs-panel">
-      <div class="logs-title">戰況速報</div>
-      <div class="logs-list">
-        <div v-for="log in store.logs" :key="log.id" class="log-item">
-          <span class="time">{{ log.time }}</span>
-          <span class="desc">{{ log.winner }} {{ log.desc }}</span>
-          <span class="amt">+{{ log.amount }}</span>
+    <!-- 下半部：操作區 + 戰況 (這塊自適應剩餘空間) -->
+    <div class="bottom-panel">
+      <!-- AI 算台按鈕 (放在戰況上面) -->
+      <div class="ai-btn-area">
+        <van-button icon="photograph" type="warning" block round @click="showCamera = true">
+          AI 算台 (拍照識別)
+        </van-button>
+      </div>
+
+      <!-- 戰況速報 (這塊滾動) -->
+      <div class="logs-wrapper">
+        <div class="logs-title">戰況速報</div>
+        <div class="logs-list">
+          <div v-for="log in store.logs" :key="log.id" class="log-item">
+            <span class="time">{{ log.time }}</span>
+            <span class="desc">{{ log.winner }} {{ log.desc }}</span>
+            <span class="amt">+{{ log.amount }}</span>
+          </div>
+          <div v-if="store.logs.length === 0" class="no-logs">暫無戰況</div>
         </div>
       </div>
     </div>
@@ -55,9 +68,18 @@
 
     <van-action-sheet v-model:show="showActionModal" title="戰績輸入">
        <div style="padding: 20px; text-align: center;">
+
+       </div>
+       <div style="padding: 20px; text-align: center;">
          <van-button type="primary" block @click="quickTestWin">測試：我自摸 1 台</van-button>
        </div>
     </van-action-sheet>
+
+    <CameraAI 
+      v-if="showCamera" 
+      @close="showCamera = false" 
+      @on-confirm="handleAiResult" 
+    />
   </div>
 </template>
 
@@ -66,11 +88,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
 import { showToast } from 'vant';
+import CameraAI from './CameraAI.vue';
 
 const store = useGameStore();
 const showQr = ref(false);
 const showActionModal = ref(false);
 const tableScale = ref(1);
+const showCamera = ref(false);
 
 // 產生連結 (假設跑在 Localhost)
 const joinUrl = computed(() => `${window.location.origin}/?room=${store.roomId}`);
@@ -89,29 +113,15 @@ const copyLink = async () => {
       console.warn('Clipboard API failed, trying fallback...');
     }
   }
-
-  // 2. Fallback: 使用舊版 textarea 方式
   try {
     const textArea = document.createElement("textarea");
     textArea.value = text;
-    
-    // 避免畫面跳動
-    textArea.style.position = "fixed";
-    textArea.style.left = "-9999px";
-    textArea.style.top = "0";
-    
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    
+    textArea.style.position = "fixed"; textArea.style.left = "-9999px"; textArea.style.top = "0";
+    document.body.appendChild(textArea); textArea.focus(); textArea.select();
     const successful = document.execCommand('copy');
     document.body.removeChild(textArea);
-    
-    if (successful) {
-      showToast({ message: '已複製連結', type: 'success' });
-    } else {
-      throw new Error('execCommand failed');
-    }
+    if (successful) showToast({ message: '已複製連結', type: 'success' });
+    else throw new Error('execCommand failed');
   } catch (err) {
     console.error('Copy failed', err);
     showToast({ message: '複製失敗，請手動複製', type: 'fail' });
@@ -129,15 +139,19 @@ const quickTestWin = () => {
 };
 
 const updateScale = () => {
-  // 320 (table) + 40*2 (seats) + 20 (safe margin) = 420
   const requiredWidth = 420;
   const availableWidth = window.innerWidth;
-  
-  if (availableWidth < requiredWidth) {
-    tableScale.value = availableWidth / requiredWidth;
-  } else {
-    tableScale.value = 1;
-  }
+  // Reduce scale slightly to ensure bottom panel has space if screen is short
+  let scale = availableWidth < requiredWidth ? availableWidth / requiredWidth : 1;
+  tableScale.value = scale;
+};
+
+const handleAiResult = (tiles) => {
+  // tiles 是最後確認的陣列，例如 ['1w', '1w', '2b']
+  console.log("AI 結果:", tiles);
+  alert(`AI 辨識完成！共 ${tiles.length} 張牌`);
+
+  // 💡 下一步：你可以把 tiles 傳給「算台函式」去計算分數
 };
 
 onMounted(() => {
@@ -151,11 +165,33 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
-/* 這裡沿用之前的 CSS，但加入 Avatar 樣式 */
-.table-view { min-height: 100vh; display: flex; flex-direction: column; color: white; transition: background 0.3s; }
-.header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); }
+.table-view { 
+  height: 100vh; /* Fixed height */
+  overflow: hidden; /* Prevent page scroll */
+  display: flex; 
+  flex-direction: column; 
+  color: white; 
+  transition: background 0.3s; 
+}
+.header { 
+  flex-shrink: 0;
+  padding: 10px 15px; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  background: rgba(0,0,0,0.2); 
+}
 
-.table-area { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+.table-area { 
+  flex: 1; /* Takes available space */
+  position: relative; 
+  display: flex; 
+  justify-content: center; 
+  align-items: center; 
+  overflow: hidden; 
+  min-height: 350px; /* Ensure space for table */
+}
+
 .mahjong-table { 
   width: 320px; height: 320px; 
   background: rgba(255,255,255,0.1); 
@@ -202,8 +238,44 @@ onUnmounted(() => {
 .seat-right { right: -40px; top: 50%; transform: translateY(-50%); }
 .seat-left { left: -40px; top: 50%; transform: translateY(-50%); }
 
-.qr-container { text-align: center; padding: 20px; }
-.logs-panel { background: rgba(0,0,0,0.5); padding: 10px; height: 150px; overflow-y: auto; }
-.log-item { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; }
+/* Bottom Panel - Container for AI button and logs */
+.bottom-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,0,0,0.3);
+  max-height: 40vh; /* Limit height so table remains visible */
+}
+
+.ai-btn-area {
+  padding: 10px 20px;
+  background: rgba(0,0,0,0.1); 
+}
+
+.logs-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Important for inner scroll */
+  padding-bottom: 20px; /* Safe area padding */
+}
+
+.logs-title {
+  padding: 10px 15px;
+  font-weight: bold;
+  font-size: 14px;
+  background: rgba(0,0,0,0.2);
+}
+
+.logs-list {
+  flex: 1;
+  overflow-y: auto; /* Scroll ONLY here */
+  padding: 0 15px;
+}
+
+.log-item { display: flex; justify-content: space-between; font-size: 13px; margin: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
 .amt { color: #f1c40f; font-weight: bold; }
+.no-logs { text-align: center; color: rgba(255,255,255,0.5); padding: 20px; font-size: 12px; }
+
+.qr-container { text-align: center; padding: 20px; }
 </style>
