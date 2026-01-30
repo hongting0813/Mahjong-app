@@ -1,10 +1,11 @@
 <template>
   <div class="camera-wrapper">
     
-    <div v-if="!isReviewing" class="capture-mode">
+    <canvas ref="canvas" style="display: none;"></canvas>
+    <div v-if="!isReviewing && !isCropping" class="capture-mode">
       <div class="video-container">
         <video ref="video" autoplay playsinline muted class="camera-view"></video>
-        <canvas ref="canvas" style="display: none;"></canvas>
+        <input type="file" ref="fileInput" accept="image/*" style="display: none" @change="handleFileUpload">
         
         <div class="scan-area">
           <div class="scan-line"></div>
@@ -21,7 +22,34 @@
         >
           拍照辨識
         </van-button>
+        <van-button 
+          round icon="photo" size="large" class="album-btn"
+          :loading="loading"
+          @click="triggerFileInput"
+        >
+          相簿選取
+        </van-button>
         <van-button plain round type="default" size="large" @click="$emit('close')">關閉</van-button>
+      </div>
+    </div>
+
+    <div v-else-if="isCropping" class="crop-mode" 
+      @touchstart="handleTouchStart" @touchmove="handleTouchMove" @touchend="handleTouchEnd"
+      @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp"
+    >
+      <div class="crop-container" ref="cropContainer">
+        <img :src="cropImgSrc" class="crop-image" :style="cropStyle" ref="cropImg" @load="initCropState" />
+        <div class="scan-area overlay-guide" :style="{ height: boxHeight + 'px' }">
+          <div class="scan-label">拖曳與縮放圖片 / 拖曳白條調整框高</div>
+          <div class="resize-handle" 
+            @mousedown.stop="startResize" @touchstart.stop="startResize"
+          ></div>
+        </div>
+      </div>
+      <div class="controls">
+        <p class="hint">雙指縮放，單指拖曳</p>
+        <van-button type="primary" round size="large" @click="confirmCrop">確認裁切</van-button>
+        <van-button plain type="default" round size="large" @click="cancelCrop">取消</van-button>
       </div>
     </div>
 
@@ -122,11 +150,26 @@ const emit = defineEmits(['close', 'on-confirm']);
 // --- 變數 ---
 const video = ref(null);
 const canvas = ref(null);
+const fileInput = ref(null);
 const stream = ref(null);
 const loading = ref(false);
 const isReviewing = ref(false);
 const showPicker = ref(false);
 const detectedTiles = reactive({});
+const isCropping = ref(false);
+const cropImgSrc = ref('');
+const cropTransform = reactive({ x: 0, y: 0, scale: 1 });
+const cropContainer = ref(null);
+const cropImg = ref(null);
+const boxHeight = ref(200); // Default height
+
+// Interaction state
+let startX = 0, startY = 0, initialX = 0, initialY = 0;
+let initialDist = 0, initialScale = 1;
+let isDragging = false;
+let isResizing = false;
+let startResizeY = 0;
+let initialHeight = 0;
 
 // --- 對照表 ---
 const TILE_MAP = {
@@ -198,9 +241,12 @@ const startCamera = async () => {
     await nextTick();
     if (video.value) video.value.srcObject = stream.value;
   } catch (e) {
-    console.error(e);
-    alert("無法啟動相機 (請確認 HTTPS 或 Localhost)");
-    emit('close');
+    if (location.hostname !== 'localhost' && location.protocol !== 'https:') {
+      console.warn("Camera access usually requires HTTPS or localhost");
+    }
+    // Don't close immediately, might be just adding file
+    // alert("無法啟動相機 (請確認 HTTPS 或 Localhost)");
+    // emit('close');
   }
 };
 
@@ -216,8 +262,9 @@ const handleRetake = () => {
   startCamera();
 };
 
+
+
 const captureAndCrop = async () => {
-  loading.value = true;
   if (!video.value || !canvas.value) return;
 
   const ctx = canvas.value.getContext('2d');
@@ -235,10 +282,19 @@ const captureAndCrop = async () => {
   ctx.drawImage(video.value, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
   const base64 = canvas.value.toDataURL("image/jpeg", 0.8);
+  await processPrediction(base64);
+};
 
+const triggerFileInput = () => {
+  fileInput.value.click();
+};
+
+const processPrediction = async (base64) => {
+  loading.value = true;
   try {
     const ip = window.location.hostname;
-    const protocol = window.location.protocol; 
+    // Server is always HTTPS on port 3001
+    const protocol = 'https:'; 
     const port = '3001';
     
     const res = await axios.post(`${protocol}//${ip}:${port}/api/predict`, { image: base64 });
@@ -251,7 +307,8 @@ const captureAndCrop = async () => {
         detectedTiles[key] = (detectedTiles[key] || 0) + 1;
       }
     });
-    
+
+    isCropping.value = false;
     stopCamera();
     isReviewing.value = true;
 
@@ -261,6 +318,173 @@ const captureAndCrop = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const handleFileUpload = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    cropImgSrc.value = e.target.result;
+    isCropping.value = true;
+    stopCamera(); // Pause camera while cropping
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+};
+
+const cancelCrop = () => {
+  isCropping.value = false;
+  cropImgSrc.value = '';
+  startCamera(); // Resume camera
+};
+
+// Crop Logic
+const cropStyle = computed(() => ({
+  transform: `translate(${cropTransform.x}px, ${cropTransform.y}px) scale(${cropTransform.scale})`,
+  transformOrigin: 'top left' // Handled manually
+}));
+
+const initCropState = () => {
+  // Center image initially
+  if (!cropContainer.value || !cropImg.value) return;
+  const cw = cropContainer.value.clientWidth;
+  const ch = cropContainer.value.clientHeight;
+  const iw = cropImg.value.naturalWidth;
+  const ih = cropImg.value.naturalHeight;
+  
+  // Fit width
+  const scale = cw / iw;
+  cropTransform.scale = scale;
+  cropTransform.x = 0;
+  cropTransform.y = (ch - ih * scale) / 2;
+
+  // Init box height relative to container (approx 25% height but adjustable)
+  boxHeight.value = ch * 0.25;
+};
+
+// Touch/Mouse Handlers
+const getDist = (t1, t2) => Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
+
+const startResize = (e) => {
+  isResizing = true;
+  const clientY = e.type.includes('touch') ? e.touches[0].pageY : e.pageY;
+  startResizeY = clientY;
+  initialHeight = boxHeight.value;
+};
+
+const handleTouchStart = (e) => {
+  if (isResizing) return; // Don't drag image if resizing box
+  if (e.touches.length === 1) {
+    isDragging = true;
+    startX = e.touches[0].pageX;
+    startY = e.touches[0].pageY;
+    initialX = cropTransform.x;
+    initialY = cropTransform.y;
+  } else if (e.touches.length === 2) {
+    isDragging = false;
+    initialDist = getDist(e.touches[0], e.touches[1]);
+    initialScale = cropTransform.scale;
+  }
+};
+
+const handleTouchMove = (e) => {
+  e.preventDefault(); // prevent scroll
+  
+  if (isResizing) {
+     const clientY = e.touches[0].pageY;
+     const dy = clientY - startResizeY;
+     boxHeight.value = Math.max(50, initialHeight + dy);
+     return;
+  }
+
+  if (e.touches.length === 1 && isDragging) {
+    const dx = e.touches[0].pageX - startX;
+    const dy = e.touches[0].pageY - startY;
+    cropTransform.x = initialX + dx;
+    cropTransform.y = initialY + dy;
+  } else if (e.touches.length === 2) {
+    const dist = getDist(e.touches[0], e.touches[1]);
+    const scaleFactor = dist / initialDist;
+    cropTransform.scale = Math.max(0.1, initialScale * scaleFactor);
+  }
+};
+
+const handleTouchEnd = () => {
+  isDragging = false;
+  isResizing = false;
+};
+
+// Mouse support for desktop testing
+const handleMouseDown = (e) => {
+  if (isResizing) return;
+  isDragging = true;
+  startX = e.pageX;
+  startY = e.pageY;
+  initialX = cropTransform.x;
+  initialY = cropTransform.y;
+};
+const handleMouseMove = (e) => {
+  if (isResizing) {
+    e.preventDefault();
+    const dy = e.pageY - startResizeY;
+    boxHeight.value = Math.max(50, initialHeight + dy);
+    return;
+  }
+  if (!isDragging) return;
+  e.preventDefault();
+  const dx = e.pageX - startX;
+  const dy = e.pageY - startY;
+  cropTransform.x = initialX + dx;
+  cropTransform.y = initialY + dy;
+};
+const handleMouseUp = () => {
+  isDragging = false;
+  isResizing = false;
+};
+
+const confirmCrop = () => {
+  if (!cropImg.value || !canvas.value || !cropContainer.value) return;
+
+  const ctx = canvas.value.getContext('2d');
+  
+  // Container dimensions
+  const cw = cropContainer.value.clientWidth;
+  const ch = cropContainer.value.clientHeight;
+  
+  // Scan area (90% width, 25% height)
+  // Matching CSS .scan-area logic:
+  // width: 90%; height: 25%;
+  // Centered in container
+  const cropW = cw * 0.9;
+  const cropH = boxHeight.value; // Use dynamic height
+  const cropX = (cw - cropW) / 2;
+  const cropY = (ch - cropH) / 2;
+
+  // We need to map cropX, cropY relative to the *transformed* image
+  // Image is drawn at (tx, ty) with scale s
+  // Pixel (px, py) on screen maps to image pixel: (px - tx) / s, (py - ty) / s
+  
+  const tx = cropTransform.x;
+  const ty = cropTransform.y;
+  const s = cropTransform.scale;
+  
+  // Source area on the original image
+  const srcX = (cropX - tx) / s;
+  const srcY = (cropY - ty) / s;
+  const srcW = cropW / s;
+  const srcH = cropH / s;
+  
+  // Set canvas size
+  canvas.value.width = cropW;
+  canvas.value.height = cropH;
+  
+  // Draw
+  ctx.drawImage(cropImg.value, srcX, srcY, srcW, srcH, 0, 0, cropW, cropH);
+  
+  const base64 = canvas.value.toDataURL("image/jpeg", 0.8);
+  processPrediction(base64);
 };
 
 const updateCount = (code, delta) => {
@@ -292,18 +516,44 @@ onUnmounted(stopCamera);
 /* 🟩 綠框樣式 */
 .scan-area {
   position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
   width: 90%; height: 25%;
   border: 2px solid #00ff00;
   box-shadow: 0 0 0 400px rgba(0,0,0,0.6);
   border-radius: 8px;
   display: flex; justify-content: center; align-items: flex-end;
 }
+.resize-handle {
+  position: absolute;
+  bottom: -15px; left: 50%;
+  transform: translateX(-50%);
+  width: 60px; height: 30px;
+  background: rgba(255,255,255,0.3);
+  border-radius: 15px;
+  display: flex; justify-content: center; align-items: center;
+  cursor: ns-resize;
+  pointer-events: auto; /* Enable clicks */
+}
+.resize-handle::after {
+  content: '';
+  width: 40px; height: 4px;
+  background: white;
+  border-radius: 2px;
+}
 .scan-label { color: #00ff00; background: rgba(0,0,0,0.6); margin-bottom: -30px; padding: 4px 8px; font-size: 14px; border-radius: 4px; }
 .scan-line { position: absolute; top:0; width: 100%; height: 2px; background: #00ff00; animation: scan 2s infinite; }
 @keyframes scan { 0% { top: 0; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
 
-.controls { padding: 30px; background: #000; display: flex; flex-direction: column; gap: 15px; }
+.controls { padding: 30px; background: #000; display: flex; flex-direction: column; gap: 15px; z-index: 10; }
 .hint { color: #999; text-align: center; font-size: 12px; margin-bottom: 5px; }
+.album-btn { background: rgba(255,255,255,0.2); color: white; border: none; }
+
+/* Crop Mode */
+.crop-mode { height: 100%; display: flex; flex-direction: column; background: #000; overflow: hidden; }
+.crop-container { flex: 1; position: relative; overflow: hidden; }
+.crop-image { position: absolute; transform-origin: 0 0; cursor: move; }
+.overlay-guide { pointer-events: none; }
 
 /* --- Review Mode Styles --- */
 .review-mode { flex: 1; background: #f7f8fa; display: flex; flex-direction: column; min-height: 0; }

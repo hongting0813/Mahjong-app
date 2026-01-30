@@ -23,6 +23,16 @@
       </div>
     </van-cell-group>
 
+    <!-- Avatar Picker Popup -->
+    <van-popup v-model:show="showAvatarPicker" position="bottom" round safe-area-inset-bottom>
+      <div class="picker-header">選擇頭像</div>
+      <div class="avatar-grid">
+        <div v-for="avatar in avatars" :key="avatar" class="grid-avatar" @click="selectAvatar(avatar)">
+          {{ avatar }}
+        </div>
+      </div>
+    </van-popup>
+
     <div class="btn-area">
       <van-button type="primary" block round @click="handleCreate">建立房間並進入</van-button>
     </div>
@@ -30,15 +40,18 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue';
+import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
 
 const router = useRouter();
 
 const store = useGameStore();
-const bgColors = ['#0b6623', '#2c3e50', '#8e44ad', '#c0392b']; // 綠, 藍, 紫, 紅
-const avatars = ['👨🏻', '👩🏻', '👴🏻', '👵🏻', '🧑🏻', '👱🏻‍♀️', '🐶', '🐱', '🐣', '🐰', '🐭', '🐠', '🤖', '👽', '🤡', '👻', '😈', '💩'];
+const bgColors = ['#0b6623', '#2c3e50', '#8e44ad', '#c0392b', '#e67e22']; // 綠, 藍, 紫, 紅, 橘
+const avatars = ['👨🏻', '👩🏻', '👴🏻', '👵🏻', '🧑🏻', '👧🏻', '👱🏻', '👱🏻‍♀️', '🐶', '🐱', '🐣', '🐰', '🐭', '🐠', '🤖', '👽', '🤡', '👻', '😈', '💩'];
+
+const showAvatarPicker = ref(false);
+const currentPickingPlayerIndex = ref(null);
 
 const form = reactive({ base: 300, tai: 50, bgColor: '#0b6623' });
 const localPlayers = reactive([
@@ -49,9 +62,15 @@ const localPlayers = reactive([
 ]);
 
 const changeAvatar = (idx) => {
-  // 簡單隨機換 (實際可做彈窗選擇)
-  const current = avatars.indexOf(localPlayers[idx].avatar);
-  localPlayers[idx].avatar = avatars[(current + 1) % avatars.length];
+  currentPickingPlayerIndex.value = idx;
+  showAvatarPicker.value = true;
+};
+
+const selectAvatar = (avatar) => {
+  if (currentPickingPlayerIndex.value !== null) {
+    localPlayers[currentPickingPlayerIndex.value].avatar = avatar;
+  }
+  showAvatarPicker.value = false;
 };
 
 const handleCreate = () => {
@@ -71,10 +90,15 @@ const handleCreate = () => {
 </script>
 <style scoped>
 .setup-container { padding: 20px 0; background: #f0f2f5; flex: 1; overflow-y: auto; }
+.title { text-align: center; margin-bottom: 20px; color: #333; }
 .color-picker { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; }
 .color-dot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 .color-dot.active { transform: scale(1.2); border-color: #333; }
 .player-row { display: flex; align-items: center; background: white; padding: 5px 15px; border-bottom: 1px solid #eee; }
 .avatar-select { font-size: 24px; margin-right: 10px; cursor: pointer; }
 .btn-area { padding: 20px; }
+.picker-header { text-align: center; padding: 15px; font-weight: bold; font-size: 16px; border-bottom: 1px solid #eee; }
+.avatar-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; padding: 20px; }
+.grid-avatar { font-size: 32px; text-align: center; cursor: pointer; padding: 5px; border-radius: 8px; }
+.grid-avatar:active { background-color: #f0f0f0; }
 </style>
