@@ -145,12 +145,18 @@ const updateScale = () => {
   tableScale.value = scale;
 };
 
-const handleAiResult = (tiles) => {
-  // tiles 是最後確認的陣列，例如 ['1w', '1w', '2b']
-  console.log("AI 結果:", tiles);
-  alert(`AI 辨識完成！共 ${tiles.length} 張牌`);
+import { calculateTai } from '../utils/mahjongScoring.js';
 
-  // 💡 下一步：你可以把 tiles 傳給「算台函式」去計算分數
+const handleAiResult = (result) => {
+  // result = { concealed: [...], exposed: [...] }
+  console.log("AI 結果:", result);
+  
+  const { tai, desc } = calculateTai(result.concealed, result.exposed);
+  const total = result.concealed.length + result.exposed.length;
+  
+  alert(`AI 辨識完成！\n暗牌: ${result.concealed.length} 張\n明牌: ${result.exposed.length} 張\n共 ${total} 張\n\n預估台數: ${tai} 台 (${desc.join(', ')})`);
+
+  // 💡 下一步：將資料同步到 Store 或後端
 };
 
 onMounted(() => {

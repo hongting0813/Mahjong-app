@@ -11,7 +11,17 @@ export const useGameStore = defineStore('game', () => {
   const errorMsg = ref('');
 
   // 遊戲資料 (會從後端同步)
-  const settings = ref({ base: 0, tai: 0, bgColor: '#0b6623' });
+  const settings = ref({
+    base: 0,
+    tai: 0,
+    bgColor: '#0b6623',
+    // ⬇️ 新增圈風設定
+    wind: {
+      mode: 'auto',   // 'auto' | 'manual'
+      manualValue: 'EW',
+      roundsPerCircle: 16 // 預設 16 局一圈 (不含連莊的粗略估計)
+    }
+  });
   const players = ref([]); // 原始順序的玩家列表
   const logs = ref([]);
 
@@ -219,6 +229,26 @@ export const useGameStore = defineStore('game', () => {
   // --- Getters (計算屬性) ---
 
   /**
+   * 圈風判斷
+   */
+  const currentWind = computed(() => {
+    // 1. 手動模式：直接回傳設定值
+    if (settings.value.wind?.mode === 'manual') {
+      return settings.value.wind.manualValue || 'EW';
+    }
+
+    // 2. 自動模式：根據 logs 數量推算
+    const threshold = settings.value.wind?.roundsPerCircle || 16;
+    const roundCount = logs.value.length;
+
+    // 簡單邏輯：每 N 局換一圈
+    const circleIndex = Math.floor(roundCount / threshold) % 4; // 0=E, 1=S, 2=W, 3=N
+    const winds = ['EW', 'SW', 'WW', 'NW'];
+
+    return winds[circleIndex];
+  });
+
+  /**
    * 視角旋轉邏輯
    * 確保「我 (myPlayerId)」永遠顯示在陣列的第一個位置 (畫面下方)
    */
@@ -263,6 +293,7 @@ export const useGameStore = defineStore('game', () => {
     settings,
     players,
     logs,
+    currentWind,
     rotatedPlayers,
     connectAndJoin,
     createRoom,
