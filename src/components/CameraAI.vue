@@ -1032,8 +1032,9 @@ const finalizeResult = () => {
     const result = {
         concealed: concealedTiles.value.map(t => t.code),
         exposed: exposedTiles.value.map(t => t.code),
-        tai: calculationResult.tai, // Fix: calculationResult is reactive, no .value
-        desc: calculationResult.desc
+        tai: calculationResult.tai, 
+        desc: calculationResult.desc,
+        isZimo: previewSettings.isZimo, // Pass Zimo status
     };
 
     emit('on-confirm', result); 

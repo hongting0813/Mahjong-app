@@ -69,8 +69,52 @@
     </van-dialog>
 
     <van-action-sheet v-model:show="showActionModal" title="戰績輸入">
-       <div style="padding: 20px; text-align: center;">
-          <!-- Action sheet content -->
+       <div style="padding: 20px;">
+          <van-form @submit="submitScore">
+            <van-cell-group inset>
+                <!-- 贏家 -->
+                <van-field name="winner" label="贏家">
+                    <template #input>
+                        <van-radio-group v-model="scoreForm.winner" direction="horizontal">
+                            <van-radio v-for="p in store.players" :key="p.id" :name="p.id">{{ p.name }}</van-radio>
+                        </van-radio-group>
+                    </template>
+                </van-field>
+
+                <!-- 方式 -->
+                <van-field name="type" label="方式">
+                    <template #input>
+                        <van-radio-group v-model="scoreForm.type" direction="horizontal">
+                            <van-radio name="zimo">自摸</van-radio>
+                            <van-radio name="ron">胡牌</van-radio>
+                        </van-radio-group>
+                    </template>
+                </van-field>
+
+                <!-- 放槍者 (胡牌時顯示) -->
+                <van-field v-if="scoreForm.type === 'ron'" name="loser" label="放槍者" :rules="[{ required: true, message: '請選擇放槍者' }]">
+                     <template #input>
+                        <van-radio-group v-model="scoreForm.loser" direction="horizontal">
+                            <van-radio v-for="p in loserOptions" :key="p.id" :name="p.id">{{ p.name }}</van-radio>
+                        </van-radio-group>
+                    </template>
+                </van-field>
+
+                <!-- 台數 -->
+                <van-field v-model="scoreForm.tai" type="number" name="tai" label="台數" placeholder="輸入台數" :rules="[{ required: true, message: '請輸入台數' }]" />
+                
+                <!-- 詳細說明 -->
+                <div v-if="scoreForm.details" style="font-size: 12px; color: #666; padding: 0 16px 10px 16px;">
+                    紀錄: {{ scoreForm.details }}
+                </div>
+            </van-cell-group>
+            
+            <div style="margin: 16px;">
+                <van-button round block type="primary" native-type="submit">
+                確認記帳
+                </van-button>
+            </div>
+          </van-form>
        </div>
     </van-action-sheet>
 
@@ -83,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
 import { showToast } from 'vant';
@@ -147,16 +191,54 @@ const updateScale = () => {
 
 import { calculateTai } from '../utils/mahjongScoring.js';
 
+const scoreForm = reactive({
+  winner: null,
+  type: 'zimo', // 'zimo' | 'ron'
+  loser: null,
+  tai: 0,
+  details: '' // Store scoring breakdown
+});
+
+const loserOptions = computed(() => {
+  if (!scoreForm.winner) return [];
+  return store.players.filter(p => p.id !== scoreForm.winner);
+});
+
 const handleAiResult = (result) => {
-  // result = { concealed: [...], exposed: [...] }
+  // result = { concealed: [...], exposed: [...], tai: ..., desc: [...], isZimo: bool }
   console.log("AI 結果:", result);
   
-  const { tai, desc } = calculateTai(result.concealed, result.exposed);
-  const total = result.concealed.length + result.exposed.length;
+  // Pre-fill form
+  scoreForm.winner = store.myPlayerId !== null ? store.myPlayerId : (store.players[0]?.id || 0);
+  scoreForm.type = result.isZimo ? 'zimo' : 'ron'; // Auto-detect Zimo
+  scoreForm.loser = null;
+  scoreForm.tai = typeof result.tai === 'number' ? result.tai : 0;
   
-  alert(`AI 辨識完成！\n暗牌: ${result.concealed.length} 張\n明牌: ${result.exposed.length} 張\n共 ${total} 張\n\n預估台數: ${tai} 台 (${desc.join(', ')})`);
+  // Format details
+  if (result.desc && Array.isArray(result.desc)) {
+    scoreForm.details = result.desc.map(d => `${d.name}(${d.tai})`).join(', ');
+  } else {
+    scoreForm.details = '';
+  }
+  
+  // Show Modal
+  showActionModal.value = true;
+};
 
-  // 💡 下一步：將資料同步到 Store 或後端
+const submitScore = () => {
+  const winner = scoreForm.winner;
+  const loser = scoreForm.type === 'zimo' ? null : scoreForm.loser;
+  const tai = Number(scoreForm.tai);
+  const details = scoreForm.details;
+  
+  if (scoreForm.type === 'ron' && loser === null) {
+    showToast('請選擇放槍者');
+    return;
+  }
+  
+  store.settleRound(winner, loser, tai, details); // Pass details
+  showActionModal.value = false;
+  showToast('戰績已更新');
 };
 
 onMounted(() => {

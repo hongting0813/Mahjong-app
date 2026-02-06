@@ -38,10 +38,16 @@ const io = new Server(httpServer, {
 });
 
 // --- 儲存 Debug 圖片 ---
-const LOG_DIR = path.join(__dirname, 'logs');
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR);
-}
+// --- 儲存路徑設定 ---
+const BASE_LOG_DIR = path.join(__dirname, 'logs');
+const PRED_DIR = path.join(BASE_LOG_DIR, 'predictions'); // Images
+const REPORT_DIR = path.join(BASE_LOG_DIR, 'reports');   // Error reports
+const GAME_DIR = path.join(BASE_LOG_DIR, 'games');       // Valid game records
+
+// Ensure all directories exist
+[BASE_LOG_DIR, PRED_DIR, REPORT_DIR, GAME_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
 
 app.post('/api/log-result', (req, res) => {
   try {
@@ -52,7 +58,7 @@ app.post('/api/log-result', (req, res) => {
     const buffer = Buffer.from(base64Data, 'base64');
 
     const name = filename || `prediction_${Date.now()}.jpg`;
-    const filePath = path.join(LOG_DIR, name);
+    const filePath = path.join(PRED_DIR, name);
 
     fs.writeFile(filePath, buffer, (err) => {
       if (err) {
@@ -76,7 +82,7 @@ app.post('/api/report-error', (req, res) => {
     if (!reportData) return res.status(400).json({ error: 'No data provided' });
 
     const name = `report_${Date.now()}.json`;
-    const filePath = path.join(LOG_DIR, name);
+    const filePath = path.join(REPORT_DIR, name);
 
     fs.writeFile(filePath, JSON.stringify(reportData, null, 2), (err) => {
       if (err) {
@@ -95,7 +101,7 @@ app.post('/api/report-error', (req, res) => {
 // --- 取得錯誤回報列表 (含摘要) ---
 app.get('/api/reports', async (req, res) => {
   try {
-    const files = await fs.promises.readdir(LOG_DIR);
+    const files = await fs.promises.readdir(REPORT_DIR);
 
     // Filter for json reports
     const reportFiles = files
@@ -104,7 +110,7 @@ app.get('/api/reports', async (req, res) => {
 
     const reports = await Promise.all(reportFiles.map(async (f) => {
       try {
-        const content = await fs.promises.readFile(path.join(LOG_DIR, f), 'utf-8');
+        const content = await fs.promises.readFile(path.join(REPORT_DIR, f), 'utf-8');
         const json = JSON.parse(content);
         return {
           filename: f,
@@ -132,7 +138,7 @@ app.get('/api/report/:filename', (req, res) => {
     return res.status(400).json({ error: 'Invalid filename' });
   }
 
-  const filePath = path.join(LOG_DIR, filename);
+  const filePath = path.join(REPORT_DIR, filename);
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) return res.status(404).json({ error: 'Report not found' });
     try {
@@ -141,6 +147,25 @@ app.get('/api/report/:filename', (req, res) => {
       res.status(500).json({ error: 'Invalid JSON file' });
     }
   });
+});
+
+// --- 儲存正確戰績 (Game Record) ---
+app.post('/api/save-game', (req, res) => {
+  try {
+    const gameData = req.body;
+    const name = `game_${Date.now()}.json`;
+    const filePath = path.join(GAME_DIR, name);
+
+    fs.writeFile(filePath, JSON.stringify(gameData, null, 2), (err) => {
+      if (err) {
+        console.error('Failed to save game:', err);
+        return res.status(500).json({ error: 'Failed' });
+      }
+      res.json({ success: true });
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Server Error' });
+  }
 });
 
 // --- AI 辨識 API ---

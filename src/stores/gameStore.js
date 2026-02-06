@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { io } from 'socket.io-client';
+import axios from 'axios';
 
 export const useGameStore = defineStore('game', () => {
   // --- State (資料狀態) ---
@@ -179,7 +180,10 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 3. 結算/記帳
    */
-  const settleRound = (winnerId, loserId, taiCount) => {
+  /**
+   * 3. 結算/記帳
+   */
+  const settleRound = async (winnerId, loserId, taiCount, details) => {
     if (!socket.value) return;
 
     const amount = Number(settings.value.base) + (taiCount * Number(settings.value.tai));
@@ -190,13 +194,16 @@ export const useGameStore = defineStore('game', () => {
     let logAmount = 0;
     const winnerName = newPlayers.find(p => p.id === winnerId)?.name || '未知';
 
+    // Append details if provided
+    const detailText = details ? ` (${details})` : '';
+
     if (loserId === null) {
       // 自摸
       newPlayers.forEach(p => {
         if (p.id === winnerId) p.score += amount * 3;
         else p.score -= amount;
       });
-      logDesc = `自摸 ${taiCount}台`;
+      logDesc = `自摸 ${taiCount}台${detailText}`;
       logAmount = amount * 3;
     } else {
       // 放槍
@@ -205,7 +212,7 @@ export const useGameStore = defineStore('game', () => {
       if (winner && loser) {
         winner.score += amount;
         loser.score -= amount;
-        logDesc = `${loser.name} 放槍 ${taiCount}台`;
+        logDesc = `${loser.name} 放槍 ${taiCount}台${detailText}`;
         logAmount = amount;
       }
     }
@@ -215,15 +222,36 @@ export const useGameStore = defineStore('game', () => {
       time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       winner: winnerName,
       desc: logDesc,
-      amount: logAmount
+      amount: logAmount,
+      details: details || '', // Store raw details
+      tai: taiCount
     };
 
-    // 發送給後端
+    // 發送給後端 Socket 同步
     socket.value.emit('record_action', {
       roomId: roomId.value,
       log: newLog,
       updatedPlayers: newPlayers
     });
+
+    // 儲存完整戰績記錄檔 (保存為 JSON)
+    try {
+      const ip = window.location.hostname;
+      const protocol = 'https:';
+      const port = '3001';
+      await axios.post(`${protocol}//${ip}:${port}/api/save-game`, {
+        timestamp: new Date().toISOString(),
+        winnerId,
+        loserId,
+        tai: taiCount,
+        details,
+        log: newLog,
+        playersSnapshot: newPlayers
+      });
+      console.log("Game record saved to server.");
+    } catch (e) {
+      console.error("Failed to save game record", e);
+    }
   };
 
   // --- Getters (計算屬性) ---
