@@ -18,6 +18,7 @@ const DRAGONS = ['RD', 'GD', 'WD'];     // 中發白
 // 台數表 (部分常用)
 const TAI_MAP = {
     ZIMO: 1,       // 自摸
+    GANG_SHANG: 1, // 槓上開花
     MEN_QING: 1,   // 門清 (無吃碰，若自摸則為門清自摸)
     WIND_SEAT: 1,  // 門風
     WIND_CIRCLE: 1,// 圈風

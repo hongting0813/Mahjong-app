@@ -7,6 +7,36 @@
 
     <!-- 上半部：麻將桌 (固定高度/比例，佔 60%) -->
     <div class="table-area">
+      <van-dialog 
+      v-model:show="showDealerDialog" 
+      title="莊家與連莊設定" 
+      show-cancel-button
+      @confirm="saveDealerSettings"
+    >
+        <div style="padding: 20px;">
+            <div style="margin-bottom: 16px;">
+                <div style="margin-bottom: 8px; font-size: 14px; color: #666;">目前的莊家</div>
+                <div style="display: flex; gap: 8px;">
+                    <van-button 
+                        v-for="p in store.players" 
+                        :key="p.id"
+                        size="small"
+                        :type="tempDealerId === p.id ? 'primary' : 'default'"
+                        @click="tempDealerId = p.id"
+                    >
+                        {{ p.name }}
+                    </van-button>
+                </div>
+            </div>
+            
+            <div>
+                <div style="margin-bottom: 8px; font-size: 14px; color: #666;">連莊次數 (連N)</div>
+                <van-stepper v-model="tempDealerStreak" min="0" max="20" integer />
+                <div style="font-size: 12px; color: #999; margin-top: 4px;">例如: 連2拉2，請設定為 2</div>
+            </div>
+        </div>
+    </van-dialog>
+
       <div class="mahjong-table" :style="{ transform: `scale(${tableScale})` }">
         <div class="center-zone" @click="showActionModal = true">
           <div class="center-content">
@@ -20,12 +50,24 @@
           :key="p.id"
           class="player-seat"
           :class="getPositionClass(index)"
+          @click="openPlayerStats(p)"
+          style="cursor: pointer;"
         >
           <div class="avatar-wrapper" :class="{ 'winner': p.score > 0, 'loser': p.score < 0 }">
             {{ p.avatar }}
             <div class="score-badge">{{ p.score }}</div>
+            
+            <!-- Dealer Badge -->
+            <div v-if="p.id === store.dealerId" class="dealer-badge" @click.stop="openDealerSettings">
+               莊 {{ store.dealerStreak > 0 ? `連${store.dealerStreak}` : '' }}
+            </div>
           </div>
           <div class="p-name">{{ p.name }}</div>
+        </div>
+        
+        <!-- Fallback Set Dealer Button if no dealer -->
+        <div v-if="store.dealerId === null && store.players.length > 0" class="center-zone" style="top: 65%; pointer-events: none;">
+            <van-button size="mini" type="warning" style="pointer-events: auto;" @click="openDealerSettings">設定莊家</van-button>
         </div>
       </div>
     </div>
@@ -48,13 +90,112 @@
       <div class="logs-list">
         <div v-for="log in store.logs" :key="log.id" class="log-item">
           <span class="time">{{ log.time }}</span>
-          <span class="desc">{{ log.winner }} {{ log.desc }}</span>
+          <span class="desc">
+            <span class="winner-name">{{ log.winner }}</span> {{ log.desc }}
+            <span v-if="log.details" class="detail-link" @click.stop="showLogDetails(log)">詳細 ></span>
+          </span>
           <span class="amt">+{{ log.amount }}</span>
         </div>
         <div v-if="store.logs.length === 0" class="no-logs">暫無戰況</div>
       </div>
     </div>
 
+    <van-dialog v-model:show="showDetailDialog" title="戰績明細" show-confirm-button>
+        <div style="padding: 12px 16px; max-height: 65vh; overflow-y: auto;">
+            
+            <!-- 1. 牌型預覽 (Moved to Top) -->
+            <div v-if="currentDetailTiles" style="margin-bottom: 16px; text-align: left;">
+                <div style="font-size: 13px; font-weight: bold; color: #555; margin-bottom: 8px;">當時牌型</div>
+                
+                <div style="background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
+                    <!-- 明牌 -->
+                    <div v-if="currentDetailTiles.exposed && currentDetailTiles.exposed.length" style="display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;">
+                        <img v-for="(code, idx) in currentDetailTiles.exposed" :key="'exp'+idx" :src="`/tiles/${code}.webp`" style="width: 28px; height: 38px;" />
+                    </div>
+                    
+                    <!-- 暗牌 + 胡牌 -->
+                    <div style="display: flex; flex-wrap: wrap; align-items: start;">
+                        <!-- 暗牌 -->
+                        <div v-if="currentDetailTiles.concealed && currentDetailTiles.concealed.length" style="display: flex; gap: 4px; margin-right: 12px; flex-wrap: wrap; flex: 1; align-content: flex-start;">
+                            <img v-for="(code, idx) in currentDetailTiles.concealed" :key="'con'+idx" :src="`/tiles/${code}.webp`" style="width: 28px; height: 38px; margin-bottom: 4px;" />
+                        </div>
+                        
+                        <!-- 贏的那張牌 -->
+                        <div v-if="currentDetailTiles.winningTile" style="display: flex; flex-direction: column; align-items: center; padding-left: 8px; border-left: 1px dashed #ddd; flex-shrink: 0; align-self: stretch; justify-content: center;">
+                            <span style="font-size: 10px; color: #d00; margin-bottom: 2px;">胡</span>
+                            <img :src="`/tiles/${currentDetailTiles.winningTile}.webp`" style="width: 32px; height: 42px; border: 2px solid #d00; border-radius: 4px;" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 台數明細 (List Layout) -->
+            <div v-if="currentDetailList.length">
+                <div style="font-size: 13px; font-weight: bold; color: #555; margin-bottom: 8px; text-align: left;">計分細項</div>
+                <div style="border: 1px solid #ebedf0; border-radius: 8px; overflow: hidden;">
+                    <van-cell 
+                        v-for="(item, i) in currentDetailList" 
+                        :key="i" 
+                        :title="item.name"
+                        title-style="flex: 4; text-align: left;"
+                        value-style="flex: 1;"
+                    >
+                        <template #value>
+                            <span v-if="item.tai" style="color: #d00; font-weight: bold;">{{ item.tai }} 台</span>
+                        </template>
+                    </van-cell>
+                </div>
+            </div>
+            <div v-else-if="!currentDetailTiles" style="text-align: center; color: #999; padding: 20px;">
+                {{ currentDetail }}
+            </div>
+        </div>
+    </van-dialog>
+
+    <!-- Stats Dialog -->
+    <van-dialog v-model:show="showStatsDialog" :title="currentStatsPlayer ? `${currentStatsPlayer.name} 的戰績` : '戰績統計'">
+        <div v-if="currentStatsPlayer" style="padding: 20px;">
+            <div style="display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px;">
+                <div style="flex: 1;">
+                    <div style="font-size: 24px; font-weight: bold; color: #ee0a24;">{{ currentStatsData.win }}</div>
+                    <div style="font-size: 12px; color: #666;">胡牌總數</div>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 24px; font-weight: bold; color: #07c160;">{{ currentStatsData.dealt }}</div>
+                    <div style="font-size: 12px; color: #666;">放槍次數</div>
+                </div>
+            </div>
+            
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <van-row gutter="10" style="margin-bottom: 8px;">
+                    <van-col span="12" style="color: #333">自摸次數: <b>{{ currentStatsData.zimo }}</b></van-col>
+                    <van-col span="12" style="color: #333">胡牌次數: <b>{{ currentStatsData.ron }}</b></van-col>
+                </van-row>
+                <van-row gutter="10">
+                    <van-col span="12" style="color: #333">最大台數: <b>{{ currentStatsData.maxTai }}</b> 台</van-col>
+                    <van-col span="12" style="color: #333">目前戰績: <b :style="{ color: currentStatsData.totalScore >= 0 ? '#ee0a24' : '#07c160' }">{{ currentStatsData.totalScore }}</b></van-col>
+                </van-row>
+            </div>
+            
+            <div style="font-size: 14px; font-weight: bold; margin-bottom: 10px; border-left: 4px solid #1989fa; padding-left: 8px; color: #333;">相關戰績</div>
+            <div style="max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #eee; border-radius: 8px; color: #333;">
+                <div v-for="log in currentStatsData.history" :key="log.id" style="padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1;">
+                        <div style="color: #666; font-size: 11px; margin-bottom: 2px;">{{ log.time }}</div>
+                        <div :style="{ color: log.isWin ? '#ee0a24' : '#07c160', fontWeight: 'bold' }">
+                           {{ log.enrichedDesc }}
+                        </div>
+                    </div>
+                    <div style="font-size: 16px; font-weight: bold;" :style="{ color: log.amount > 0 ? '#ee0a24' : '#07c160' }">
+                        {{ log.amount > 0 ? '+' : '' }}{{ log.amount }}
+                    </div>
+                </div>
+                <div v-if="currentStatsData.history.length === 0" style="text-align: center; padding: 20px; color: #999;">暫無紀錄</div>
+            </div>
+        </div>
+    </van-dialog>
+
+    <!-- Dealer Settings Dialog -->
     <van-dialog 
       v-model:show="showQr" 
       title="掃描加入房間" 
@@ -101,8 +242,26 @@
                 </van-field>
 
                 <!-- 台數 -->
-                <van-field v-model="scoreForm.tai" type="number" name="tai" label="台數" placeholder="輸入台數" :rules="[{ required: true, message: '請輸入台數' }]" />
+                <van-field v-model="scoreForm.tai" type="number" name="tai" label="手牌台數" placeholder="輸入台數" :rules="[{ required: true, message: '請輸入台數' }]" />
                 
+                <!-- 連莊設定 -->
+                <van-cell center title="計算連莊台數">
+                    <template #right-icon>
+                        <van-switch v-model="scoreForm.includeLian" size="24" />
+                    </template>
+                </van-cell>
+                <van-field 
+                    v-if="scoreForm.includeLian"
+                    v-model="scoreForm.lianTai" 
+                    type="number" 
+                    label="連莊台數" 
+                    placeholder="自動計算" 
+                />
+                
+                <div style="padding: 10px 16px; text-align: right; font-weight: bold; color: #d00;">
+                    總計: {{ Number(scoreForm.tai) + Number(scoreForm.lianTai) }} 台
+                </div>
+
                 <!-- 詳細說明 -->
                 <div v-if="scoreForm.details" style="font-size: 12px; color: #666; padding: 0 16px 10px 16px;">
                     紀錄: {{ scoreForm.details }}
@@ -127,17 +286,162 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
-import { showToast } from 'vant';
+import { showToast, showDialog } from 'vant'; // Removed showDialog import if not used, but using van-dialog component
 import CameraAI from './CameraAI.vue';
 
 const store = useGameStore();
 const showQr = ref(false);
 const showActionModal = ref(false);
+const showDetailDialog = ref(false); // Valid
+const currentDetail = ref(''); // Valid
+const currentDetailTiles = ref(null); // Valid
+const currentAiResult = ref(null); // To store current AI result temporarily
 const tableScale = ref(1);
 const showCamera = ref(false);
+
+// Dealer Settings
+const showDealerDialog = ref(false);
+const tempDealerId = ref(null);
+const tempDealerStreak = ref(0);
+
+// Player Stats
+const showStatsDialog = ref(false);
+const currentStatsPlayer = ref(null);
+const currentStatsData = ref({
+    win: 0,
+    zimo: 0,
+    ron: 0,
+    dealt: 0,
+    maxTai: 0,
+    totalScore: 0,
+    history: []
+});
+
+const openPlayerStats = (player) => {
+    currentStatsPlayer.value = player;
+    calculateStats(player.id);
+    showStatsDialog.value = true;
+};
+
+const calculateStats = (playerId) => {
+    let win = 0, zimo = 0, ron = 0, dealt = 0, maxTai = 0;
+    const history = [];
+    
+    // Safety check: logs might be undefined initially
+    const safeLogs = store.logs || [];
+    
+    safeLogs.forEach(log => {
+        let involved = false;
+        
+        // Winner Stats
+        if (log.winnerId === playerId) {
+            win++;
+            if (log.loserId === null) zimo++;
+            else ron++;
+            
+            if (log.tai > maxTai) maxTai = log.tai;
+            involved = true;
+        }
+        
+        // Loser Stats (Dealt In)
+        if (log.loserId === playerId) {
+            dealt++;
+            involved = true;
+        }
+        
+        // Zimo Loss (Others win by Zimo)
+        if (log.winnerId !== playerId && log.loserId === null) {
+            involved = true;
+        }
+        
+        if (involved) {
+            // Enrich description for this player's perspective
+            let enrichedDesc = '';
+            const winnerName = store.players.find(p => p.id === log.winnerId)?.name || '未知';
+            
+            if (log.winnerId === playerId) {
+                // I won
+                if (log.loserId === null) {
+                    enrichedDesc = '自摸';
+                } else {
+                    const loserName = store.players.find(p => p.id === log.loserId)?.name || '未知';
+                    enrichedDesc = `胡了 ${loserName}`;
+                }
+            } else {
+                // I lost
+                if (log.loserId === playerId) {
+                    // I dealt in
+                    enrichedDesc = `放槍給 ${winnerName}`;
+                } else if (log.loserId === null) {
+                    // Someone else Zimo, I paid
+                    enrichedDesc = `被 ${winnerName} 自摸`;
+                } else {
+                    // Should not happen if involved check is correct, but fallback
+                    enrichedDesc = `${winnerName} 胡牌`; 
+                }
+            }
+            
+            // Calculate my specific amount change
+            let myAmount = 0;
+            if (log.winnerId === playerId) myAmount = log.amount; // I won full amount? Wait, log.amount is total? 
+            // Usually log.amount is what winner gets.
+            // If Zimo, winner gets X * 3. Each loser pays X. 
+            // Wait, store.settleRound needs to be checked. 
+            // Assuming log.amount is total transfer to winner.
+            
+            if (log.winnerId === playerId) {
+                myAmount = log.amount;
+            } else {
+                 if (log.loserId === null) {
+                     // Zimo: I pay 1/3
+                     myAmount = -(log.amount / 3);
+                 } else {
+                     // Ron: I pay full
+                     myAmount = -log.amount;
+                 }
+            }
+            
+            history.push({
+                ...log,
+                enrichedDesc,
+                amount: myAmount, // Override strict amount for this view
+                isWin: myAmount > 0
+            });
+        }
+    });
+    
+    // Find current score from store
+    const currentPlayer = store.players.find(p => p.id === playerId);
+    
+    currentStatsData.value = {
+        win, zimo, ron, dealt, maxTai,
+        totalScore: currentPlayer?.score || 0,
+        history: history.reverse() // Newest first
+    };
+};
+
+
+// Initialize Dealer logic when players load
+watch(() => store.players, (newVal) => {
+    if (newVal.length > 0 && store.dealerId === null) {
+        store.setDealer(newVal[0].id, 0); // Default to first player
+    }
+}, { immediate: true });
+
+const openDealerSettings = () => {
+    tempDealerId.value = store.dealerId || (store.players[0]?.id);
+    tempDealerStreak.value = store.dealerStreak;
+    showDealerDialog.value = true;
+};
+
+const saveDealerSettings = () => {
+    store.setDealer(tempDealerId.value, Number(tempDealerStreak.value));
+    showDealerDialog.value = false;
+    showToast('莊家設定已更新');
+};
 
 // 產生連結 (假設跑在 Localhost)
 const joinUrl = computed(() => `${window.location.origin}/?room=${store.roomId}`);
@@ -196,6 +500,9 @@ const scoreForm = reactive({
   type: 'zimo', // 'zimo' | 'ron'
   loser: null,
   tai: 0,
+  baseTai: 0, // Hand Tai
+  lianTai: 0, // Streak Tai
+  includeLian: true, // Toggle
   details: '' // Store scoring breakdown
 });
 
@@ -212,31 +519,120 @@ const handleAiResult = (result) => {
   scoreForm.winner = store.myPlayerId !== null ? store.myPlayerId : (store.players[0]?.id || 0);
   scoreForm.type = result.isZimo ? 'zimo' : 'ron'; // Auto-detect Zimo
   scoreForm.loser = null;
-  scoreForm.tai = typeof result.tai === 'number' ? result.tai : 0;
+  
+  // Calculate Base Tai
+  let totalTai = typeof result.tai === 'number' ? result.tai : 0;
   
   // Format details
+  let detailArr = [];
   if (result.desc && Array.isArray(result.desc)) {
-    scoreForm.details = result.desc.map(d => `${d.name}(${d.tai})`).join(', ');
-  } else {
-    scoreForm.details = '';
+    detailArr = result.desc.map(d => `${d.name}(${d.tai})`);
   }
+  
+  scoreForm.baseTai = totalTai; 
+  scoreForm.tai = totalTai; 
+  scoreForm.details = detailArr.join(', ');
+
+  // Save full result for logging
+  currentAiResult.value = {
+    concealed: result.concealed || [],
+    exposed: result.exposed || [],
+    winningTile: result.winningTile || null
+  };
+  
+  // Trigger Lian Tai calculation
+  updateLianTai();
   
   // Show Modal
   showActionModal.value = true;
 };
 
+// Start watching form changes to update Lian Tai
+watch(() => [scoreForm.winner, scoreForm.loser, scoreForm.includeLian], () => {
+    if (showActionModal.value) updateLianTai();
+});
+
+// Watch modal open to refresh state
+watch(showActionModal, (newVal) => {
+    if (newVal) {
+        initScoreFormWinner();
+    }
+});
+
+// Also watch players if modal is open (e.g. reload or delay)
+watch(() => store.players, () => {
+    if (showActionModal.value) {
+        initScoreFormWinner();
+    }
+}, { deep: true });
+
+const initScoreFormWinner = () => {
+    // Refresh winner default if unset or invalid
+    if (!scoreForm.winner || !store.players.some(p => p.id === scoreForm.winner)) {
+         scoreForm.winner = store.dealerId !== null ? store.dealerId : (store.players[0]?.id || 0);
+    }
+    // Force update Lian Tai based on current settings
+    updateLianTai();
+};
+
+const updateLianTai = () => {
+    if (!scoreForm.includeLian) {
+        scoreForm.lianTai = 0;
+        return;
+    }
+    
+    // Calculate potential streak bonus
+    const w = scoreForm.winner;
+    const l = scoreForm.type === 'zimo' ? null : scoreForm.loser;
+    
+    // Only calculate if valid
+    if (w !== null) {
+        const bonus = store.calculateLianTai(w, l);
+        scoreForm.lianTai = bonus;
+    }
+};
+
+const showLogDetails = (log) => {
+    currentDetail.value = log.details || '無詳細資料';
+    currentDetailTiles.value = log.tiles || null;
+    showDetailDialog.value = true;
+};
+
+// Compute structured details list
+const currentDetailList = computed(() => {
+    if (!currentDetail.value || currentDetail.value === '無詳細資料') return [];
+    
+    // Parse format "Name(Tai)"
+    return currentDetail.value.split(',').map(s => {
+        const str = s.trim();
+        const match = str.match(/^(.*)\((\d+)\)$/);
+        if (match) {
+            return { name: match[1], tai: match[2] };
+        }
+        return { name: str, tai: '' };
+    });
+});
+
 const submitScore = () => {
   const winner = scoreForm.winner;
   const loser = scoreForm.type === 'zimo' ? null : scoreForm.loser;
-  const tai = Number(scoreForm.tai);
-  const details = scoreForm.details;
+  // Total Tai = Base + Lian
+  const tai = Number(scoreForm.tai) + Number(scoreForm.lianTai);
+  
+  let details = scoreForm.details;
+  if (scoreForm.lianTai > 0) {
+      const lianText = `連莊(${scoreForm.lianTai})`;
+      details = details ? `${details}, ${lianText}` : lianText;
+  }
+  
+  const tiles = currentAiResult.value; // Get saved tiles
   
   if (scoreForm.type === 'ron' && loser === null) {
     showToast('請選擇放槍者');
     return;
   }
   
-  store.settleRound(winner, loser, tai, details); // Pass details
+  store.settleRound(winner, loser, tai, details, tiles); // Pass tiles
   showActionModal.value = false;
   showToast('戰績已更新');
 };
@@ -258,7 +654,13 @@ onUnmounted(() => {
   display: flex; 
   flex-direction: column; 
   color: white; 
-  transition: background 0.3s;
+}
+.detail-link {
+  color: #999;
+  font-size: 12px;
+  margin-left: 6px;
+  cursor: pointer;
+  text-decoration: underline;
 }
 .header { 
   flex-shrink: 0;
@@ -292,7 +694,66 @@ onUnmounted(() => {
 
 /* ... (Seat styles unchanged) ... */
 .center-zone { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100px; height: 100px; border: 2px dashed rgba(255,255,255,0.4); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; .logo { font-size: 40px; } }
-.player-seat { position: absolute; display: flex; flex-direction: column; align-items: center; width: 80px; .avatar-wrapper { font-size: 40px; width: 60px; height: 60px; background: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.3); border: 3px solid white; &.winner { border-color: #ee0a24; animation: pop 0.3s; } &.loser { border-color: #07c160; } .score-badge { position: absolute; bottom: -5px; right: -10px; background: #333; color: white; font-size: 12px; padding: 2px 6px; border-radius: 10px; font-weight: bold; } } .p-name { margin-top: 5px; font-size: 12px; text-shadow: 0 1px 2px black; } }
+.player-seat { 
+    position: absolute; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    width: 80px; 
+    
+    .avatar-wrapper { 
+        font-size: 40px; 
+        width: 60px; 
+        height: 60px; 
+        background: white; 
+        border-radius: 50%; 
+        display: flex; 
+        justify-content: center; 
+        align-items: center; 
+        position: relative; 
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
+        border: 3px solid white; 
+        
+        &.winner { border-color: #ee0a24; animation: pop 0.3s; } 
+        &.loser { border-color: #07c160; } 
+        
+        .score-badge { 
+            position: absolute; 
+            bottom: -5px; 
+            right: -10px; 
+            background: #333; 
+            color: white; 
+            font-size: 12px; 
+            padding: 2px 6px; 
+            border-radius: 10px; 
+            font-weight: bold;
+            z-index: 5;
+        } 
+        
+        .dealer-badge {
+            position: absolute;
+            top: -10px;
+            right: -12px;
+            background: #FF9800; /* Distinct Orange */
+            color: #fff;
+            font-size: 12px; /* Larger font */
+            padding: 2px 8px; /* More padding */
+            border-radius: 12px; /* Pill shape */
+            border: 2px solid #fff; /* White border to pop */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            cursor: pointer;
+            font-weight: bold;
+            z-index: 10; /* Above score badge */
+            white-space: nowrap; /* Prevent wrapping */
+        }
+    } 
+    
+    .p-name { 
+        margin-top: 5px; 
+        font-size: 12px; 
+        text-shadow: 0 1px 2px black; 
+    } 
+}
 .seat-bottom { bottom: -40px; left: 50%; transform: translateX(-50%); }
 .seat-top { top: -40px; left: 50%; transform: translateX(-50%); }
 .seat-right { right: -40px; top: 50%; transform: translateY(-50%); }
@@ -346,6 +807,7 @@ onUnmounted(() => {
 }
 
 .log-item { display: flex; justify-content: space-between; font-size: 13px; margin: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
+.winner-name { color: #f1c40f; font-weight: bold; margin-right: 4px; }
 .amt { color: #f1c40f; font-weight: bold; }
 .no-logs { text-align: center; color: rgba(255,255,255,0.5); padding: 20px; font-size: 12px; }
 

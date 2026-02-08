@@ -1034,7 +1034,8 @@ const finalizeResult = () => {
         exposed: exposedTiles.value.map(t => t.code),
         tai: calculationResult.tai, 
         desc: calculationResult.desc,
-        isZimo: previewSettings.isZimo, // Pass Zimo status
+        isZimo: previewSettings.isZimo, 
+        winningTile: winningTileId.value ? tiles.value.find(t => t.id === winningTileId.value)?.code : null // Pass winning tile
     };
 
     emit('on-confirm', result); 

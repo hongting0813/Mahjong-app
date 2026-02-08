@@ -8,6 +8,9 @@ export const useGameStore = defineStore('game', () => {
   const socket = ref(null);
   const roomId = ref(null);
   const myPlayerId = ref(null); // 我選擇的座位 ID (0~3)
+  // Dealer State
+  const dealerId = ref(null); // ID of the current dealer
+  const dealerStreak = ref(0); // Current streak count (Lian N)
   const isConnected = ref(false); // 連線狀態亮燈用
   const errorMsg = ref('');
 
@@ -183,7 +186,7 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 3. 結算/記帳
    */
-  const settleRound = async (winnerId, loserId, taiCount, details) => {
+  const settleRound = async (winnerId, loserId, taiCount, details, tiles) => {
     if (!socket.value) return;
 
     const amount = Number(settings.value.base) + (taiCount * Number(settings.value.tai));
@@ -195,7 +198,7 @@ export const useGameStore = defineStore('game', () => {
     const winnerName = newPlayers.find(p => p.id === winnerId)?.name || '未知';
 
     // Append details if provided
-    const detailText = details ? ` (${details})` : '';
+    // const detailText = details ? ` (${details})` : ''; // User requested to hide details from main desc
 
     if (loserId === null) {
       // 自摸
@@ -203,7 +206,7 @@ export const useGameStore = defineStore('game', () => {
         if (p.id === winnerId) p.score += amount * 3;
         else p.score -= amount;
       });
-      logDesc = `自摸 ${taiCount}台${detailText}`;
+      logDesc = `自摸 ${taiCount} 台`;
       logAmount = amount * 3;
     } else {
       // 放槍
@@ -212,7 +215,7 @@ export const useGameStore = defineStore('game', () => {
       if (winner && loser) {
         winner.score += amount;
         loser.score -= amount;
-        logDesc = `${loser.name} 放槍 ${taiCount}台${detailText}`;
+        logDesc = `胡了 ${loser.name} ${taiCount} 台`; // Explicit "Won off Loser"
         logAmount = amount;
       }
     }
@@ -221,10 +224,13 @@ export const useGameStore = defineStore('game', () => {
       id: Date.now(),
       time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       winner: winnerName,
+      winnerId: winnerId, // Added for stats
+      loserId: loserId,   // Added for stats
       desc: logDesc,
       amount: logAmount,
       details: details || '', // Store raw details
-      tai: taiCount
+      tai: taiCount,
+      tiles: tiles || null    // Store tile state
     };
 
     // 發送給後端 Socket 同步
@@ -240,6 +246,7 @@ export const useGameStore = defineStore('game', () => {
       const protocol = 'https:';
       const port = '3001';
       await axios.post(`${protocol}//${ip}:${port}/api/save-game`, {
+        roomId: roomId.value, // Added roomId
         timestamp: new Date().toISOString(),
         winnerId,
         loserId,
@@ -252,6 +259,54 @@ export const useGameStore = defineStore('game', () => {
     } catch (e) {
       console.error("Failed to save game record", e);
     }
+
+    // Update Dealer State for next round logic
+    updateDealerLogic(winnerId);
+  };
+
+  /**
+   * Dealer Logic: Determine next dealer and streak
+   */
+  const updateDealerLogic = (winnerId) => {
+    // If no dealer set, default to player 0
+    if (dealerId.value === null && players.value.length > 0) {
+      dealerId.value = players.value[0].id;
+      dealerStreak.value = 0;
+    }
+
+    if (winnerId === dealerId.value) {
+      // Dealer wins: Streak continues
+      dealerStreak.value++;
+    } else {
+      // Dealer loses: Next player, Reset streak
+      // Find current dealer index
+      const currentIdx = players.value.findIndex(p => p.id === dealerId.value);
+      if (currentIdx !== -1) {
+        const nextIdx = (currentIdx + 1) % players.value.length;
+        dealerId.value = players.value[nextIdx].id;
+      }
+      dealerStreak.value = 0;
+    }
+  };
+
+  const setDealer = (id, streak) => {
+    dealerId.value = id;
+    dealerStreak.value = streak;
+  };
+
+  /**
+   * Calculate Lian/La bonus Tai for a given winner/loser
+   */
+  const calculateLianTai = (winnerId, loserId) => {
+    if (dealerId.value === null) return 0;
+
+    const isDealerInvolved = (winnerId === dealerId.value) || (loserId === dealerId.value);
+
+    if (isDealerInvolved) {
+      // Lian N -> 2*N + 1
+      return (dealerStreak.value * 2) + 1;
+    }
+    return 0;
   };
 
   // --- Getters (計算屬性) ---
@@ -327,6 +382,11 @@ export const useGameStore = defineStore('game', () => {
     createRoom,
     updateSettings,
     settleRound,
-    resetState
+    resetState,
+    dealerId,
+    dealerStreak,
+    setDealer,
+    calculateLianTai,
+    updateDealerLogic
   };
 });
