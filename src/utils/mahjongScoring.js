@@ -584,6 +584,15 @@ function computeScore(hand, flowers, ctx, extraContext) {
     // 8. 自摸 / 槓上 / 海底
     if (ctx.isZimo) {
         tai += TAI_MAP.ZIMO;
+
+        // 門清自摸 (一摸三: 門清1 + 自摸1 + 獎勵1 = 3)
+        // Check if hand is Men Qing (no exposed sets)
+        // logic for isMenQing was defined below, let's hoist or check directly
+        if (hand.exposedSets.length === 0) {
+            tai += 1;
+            desc.push({ name: '門清自摸 (加計)', tai: 1 });
+        }
+
         desc.push({ name: '自摸', tai: TAI_MAP.ZIMO });
     }
     if (ctx.isGangShang) {

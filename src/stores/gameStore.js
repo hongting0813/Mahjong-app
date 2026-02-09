@@ -7,6 +7,7 @@ export const useGameStore = defineStore('game', () => {
   // --- State (資料狀態) ---
   const socket = ref(null);
   const roomId = ref(null);
+  const sessionId = ref(null); // Unique Session ID (timestamp)
   const myPlayerId = ref(null); // 我選擇的座位 ID (0~3)
   // Dealer State
   const dealerId = ref(null); // ID of the current dealer
@@ -40,7 +41,10 @@ export const useGameStore = defineStore('game', () => {
     if (!data) return;
     if (data.settings) settings.value = data.settings;
     if (data.players) players.value = data.players;
+    if (data.settings) settings.value = data.settings;
+    if (data.players) players.value = data.players;
     if (data.logs) logs.value = data.logs;
+    if (data.sessionId) sessionId.value = data.sessionId;
   };
 
   const setupSocketListeners = () => {
@@ -108,6 +112,13 @@ export const useGameStore = defineStore('game', () => {
     socket.value.on('state_updated', (data) => {
       console.log('🔄 房間狀態更新');
       syncData(data);
+    });
+
+    // F. 房間被刪除
+    socket.value.on('room_deleted', () => {
+      alert('⚠️ 此房間已被房主刪除，將返回首頁。');
+      roomId.value = null;
+      window.location.href = '/'; // Force reload/redirect
     });
 
     // E. 斷線
@@ -181,6 +192,14 @@ export const useGameStore = defineStore('game', () => {
   };
 
   /**
+   * 2.5 刪除房間
+   */
+  const deleteRoom = () => {
+    if (!socket.value || !roomId.value) return;
+    socket.value.emit('delete_room', roomId.value);
+  };
+
+  /**
    * 3. 結算/記帳
    */
   /**
@@ -247,6 +266,7 @@ export const useGameStore = defineStore('game', () => {
       const port = '3001';
       await axios.post(`${protocol}//${ip}:${port}/api/save-game`, {
         roomId: roomId.value, // Added roomId
+        sessionId: sessionId.value, // Added sessionId
         timestamp: new Date().toISOString(),
         winnerId,
         loserId,
@@ -380,6 +400,7 @@ export const useGameStore = defineStore('game', () => {
     rotatedPlayers,
     connectAndJoin,
     createRoom,
+    deleteRoom, // Export deleteRoom
     updateSettings,
     settleRound,
     resetState,

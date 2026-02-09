@@ -43,6 +43,7 @@ const BASE_LOG_DIR = path.join(__dirname, 'logs');
 const PRED_DIR = path.join(BASE_LOG_DIR, 'predictions'); // Images
 const REPORT_DIR = path.join(BASE_LOG_DIR, 'reports');   // Error reports
 const GAME_DIR = path.join(BASE_LOG_DIR, 'games');       // Valid game records
+const ROOMS_FILE = path.join(BASE_LOG_DIR, 'rooms.json'); // Active rooms state
 
 // Ensure all directories exist
 [BASE_LOG_DIR, PRED_DIR, REPORT_DIR, GAME_DIR].forEach(dir => {
@@ -203,7 +204,35 @@ app.post('/api/predict', async (req, res) => {
 });
 
 // --- Socket.io ---
-const rooms = {};
+// --- Socket.io ---
+let rooms = {};
+
+// Load rooms on startup
+const loadRooms = () => {
+  try {
+    if (fs.existsSync(ROOMS_FILE)) {
+      const data = fs.readFileSync(ROOMS_FILE, 'utf8');
+      rooms = JSON.parse(data);
+      console.log(`📡 Loaded ${Object.keys(rooms).length} active rooms from disk.`);
+    } else {
+      console.log("🆕 No previous room state found, starting fresh.");
+    }
+  } catch (e) {
+    console.error("❌ Failed to load rooms:", e);
+    rooms = {};
+  }
+};
+
+const saveRooms = () => {
+  try {
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms, null, 2));
+  } catch (e) {
+    console.error("❌ Failed to save rooms:", e);
+  }
+};
+
+// Initialize
+loadRooms();
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -225,6 +254,7 @@ io.on('connection', (socket) => {
     }
     socket.join(roomId);
     rooms[roomId] = {
+      sessionId: Date.now(), // Unique session ID
       settings: { base: 100, tai: 20, bgColor: '#0b6623' },
       players: [
         { id: 0, name: '玩家1', score: 0, avatar: '🀄️' },
@@ -236,6 +266,7 @@ io.on('connection', (socket) => {
     };
     console.log(`User ${socket.id} created room ${roomId}`);
     socket.emit('init_state', rooms[roomId]);
+    saveRooms(); // Auto-save
   });
 
   socket.on('update_settings', ({ roomId, settings, players }) => {
@@ -243,6 +274,7 @@ io.on('connection', (socket) => {
       rooms[roomId].settings = settings;
       rooms[roomId].players = players;
       io.to(roomId).emit('state_updated', rooms[roomId]);
+      saveRooms(); // Auto-save
     }
   });
 
@@ -251,6 +283,19 @@ io.on('connection', (socket) => {
       rooms[roomId].players = updatedPlayers;
       rooms[roomId].logs.unshift(log);
       io.to(roomId).emit('state_updated', rooms[roomId]);
+      saveRooms(); // Auto-save
+    }
+  });
+
+  socket.on('delete_room', (roomId) => {
+    if (rooms[roomId]) {
+      // 1. Delete from memory
+      delete rooms[roomId];
+      // 2. Persist change
+      saveRooms();
+      // 3. Notify clients to leave
+      io.to(roomId).emit('room_deleted');
+      console.log(`🗑️ Room ${roomId} deleted.`);
     }
   });
 });

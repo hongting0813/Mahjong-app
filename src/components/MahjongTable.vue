@@ -1,8 +1,11 @@
 <template>
   <div class="table-view" :style="{ background: store.settings.bgColor }">
     <div class="header">
-      <div class="room-info">底{{ store.settings.base }} / 台{{ store.settings.tai }}</div>
-      <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
+      <div class="room-info">底 {{ store.settings.base }} / 台 {{ store.settings.tai }}</div>
+      <div style="display: flex; gap: 8px;">
+        <van-button icon="chart-trending-o" size="small" round type="primary" @click="showSettlementDialog = true">結算</van-button>
+        <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
+      </div>
     </div>
 
     <!-- 上半部：麻將桌 (固定高度/比例，佔 60%) -->
@@ -39,7 +42,7 @@
 
       <div class="mahjong-table" :style="{ transform: `scale(${tableScale})` }">
         <div class="center-zone" @click="showActionModal = true">
-          <div class="center-content">
+          <div class="center-content" style="text-align: center; display: flex; flex-direction: column; align-items: center;">
             <div class="logo">🀄️</div>
             <div>記帳</div>
           </div>
@@ -75,13 +78,10 @@
     <!-- 中間：操作區 (佔 10%) -->
     <div class="action-area">
       <div class="action-btn" @click="showCamera = true">
-        <van-icon name="photograph" size="20" />
+        <van-icon name="scan" size="20" />
         <span>AI 算台</span>
       </div>
-      <div class="action-btn" @click="quickTestWin">
-        <van-icon name="fire-o" size="20" />
-        <span>自摸測試</span>
-      </div>
+
     </div>
 
     <!-- 下半部：戰況 (佔 30%) -->
@@ -157,11 +157,11 @@
         <div v-if="currentStatsPlayer" style="padding: 20px;">
             <div style="display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px;">
                 <div style="flex: 1;">
-                    <div style="font-size: 24px; font-weight: bold; color: #ee0a24;">{{ currentStatsData.win }}</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #07c160;">{{ currentStatsData.win }}</div>
                     <div style="font-size: 12px; color: #666;">胡牌總數</div>
                 </div>
                 <div style="flex: 1;">
-                    <div style="font-size: 24px; font-weight: bold; color: #07c160;">{{ currentStatsData.dealt }}</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #ee0a24;">{{ currentStatsData.dealt }}</div>
                     <div style="font-size: 12px; color: #666;">放槍次數</div>
                 </div>
             </div>
@@ -173,7 +173,7 @@
                 </van-row>
                 <van-row gutter="10">
                     <van-col span="12" style="color: #333">最大台數: <b>{{ currentStatsData.maxTai }}</b> 台</van-col>
-                    <van-col span="12" style="color: #333">目前戰績: <b :style="{ color: currentStatsData.totalScore >= 0 ? '#ee0a24' : '#07c160' }">{{ currentStatsData.totalScore }}</b></van-col>
+                    <van-col span="12" style="color: #333">目前戰績: <b :style="{ color: currentStatsData.totalScore >= 0 ? '#07c160' : '#ee0a24' }">{{ currentStatsData.totalScore }}</b></van-col>
                 </van-row>
             </div>
             
@@ -182,11 +182,11 @@
                 <div v-for="log in currentStatsData.history" :key="log.id" style="padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
                     <div style="flex: 1;">
                         <div style="color: #666; font-size: 11px; margin-bottom: 2px;">{{ log.time }}</div>
-                        <div :style="{ color: log.isWin ? '#ee0a24' : '#07c160', fontWeight: 'bold' }">
+                        <div :style="{ color: log.isWin ? '#07c160' : '#ee0a24', fontWeight: 'bold' }">
                            {{ log.enrichedDesc }}
                         </div>
                     </div>
-                    <div style="font-size: 16px; font-weight: bold;" :style="{ color: log.amount > 0 ? '#ee0a24' : '#07c160' }">
+                    <div style="font-size: 16px; font-weight: bold;" :style="{ color: log.amount > 0 ? '#07c160' : '#ee0a24' }">
                         {{ log.amount > 0 ? '+' : '' }}{{ log.amount }}
                     </div>
                 </div>
@@ -208,6 +208,91 @@
         <van-button icon="link" round size="small" @click="copyLink">複製連結</van-button>
       </div>
     </van-dialog>
+    
+    <!-- Settlement Dialog -->
+    <van-dialog 
+      v-model:show="showSettlementDialog" 
+      width="95%"
+      :show-confirm-button="false"
+      close-on-click-overlay
+    >
+      <div class="settlement-container" ref="settlementContainerRef">
+        <!-- Settlement Report Header (Visible in Image) -->
+        <div class="settlement-report-header">
+            <div class="s-title">麻將戰績表</div>
+            <div class="s-info">
+                <span>{{ new Date().toLocaleDateString() }}</span>
+                <span style="margin: 0 8px;">|</span>
+                <span>底 {{ store.settings.base }} / 台 {{ store.settings.tai }}</span>
+            </div>
+        </div>
+
+        <!-- Player Headers -->
+        <div class="settlement-header">
+           <div class="col-idx">#</div>
+           <div v-for="p in store.players" :key="p.id" class="col-player">
+              <div class="s-avatar">{{ p.avatar }}</div>
+              <div class="s-name">{{ p.name }}</div>
+           </div>
+        </div>
+        
+        <!-- Score Rows -->
+        <div class="settlement-body">
+            <div v-for="(row, idx) in settlementRows" :key="idx" class="settlement-row">
+                <div class="col-idx">{{ idx + 1 }}</div>
+                <div v-for="p in store.players" :key="p.id" class="col-score" 
+                     :class="{ 
+                        'win': row.scores[p.id] > 0, 
+                        'lose': row.scores[p.id] < 0 
+                     }">
+                     {{ row.scores[p.id] > 0 ? '+' : '' }}{{ row.scores[p.id] !== 0 ? row.scores[p.id] : '-' }}
+                </div>
+            </div>
+            <div v-if="settlementRows.length === 0" class="no-data">暫無紀錄</div>
+        </div>
+
+        <!-- Total Footer -->
+        <div class="settlement-footer">
+            <div class="col-idx">總</div>
+            <div v-for="p in store.players" :key="p.id" class="col-total" 
+                 :class="{ 'win': p.score > 0, 'lose': p.score < 0 }">
+                 {{ p.score > 0 ? '+' : '' }}{{ p.score }}
+            </div>
+        </div>
+        
+        <div class="settlement-actions">
+             <div style="display: flex; gap: 10px; flex-direction: column;">
+                <div style="display: flex; gap: 10px;">
+                    <van-button block round type="success" @click="downloadSettlementImage">下載圖片</van-button>
+                    <van-button block round @click="showSettlementDialog = false">關閉</van-button>
+                </div>
+                <van-button block round plain type="danger" icon="delete-o" @click="promptDeleteRoom">結束戰局並刪除房間</van-button>
+             </div>
+        </div>
+      </div>
+    </van-dialog>
+
+    <!-- Delete Room Confirmation Dialog -->
+    <van-dialog
+        v-model:show="showDeleteConfirm"
+        title="⚠️ 確認刪除房間"
+        show-cancel-button
+        @confirm="handleDeleteConfirm"
+        confirm-button-text="確認刪除"
+        confirm-button-color="#ee0a24"
+    >
+        <div style="padding: 20px; text-align: center;">
+            <p style="color: #666; font-size: 14px; margin-bottom: 15px;">
+                此操作將<b style="color: #ee0a24;">永久刪除</b>房間資料。<br>
+                請輸入房號 <b style="color: #1989fa;">{{ store.roomId }}</b> 以確認。
+            </p>
+            <input
+                v-model="deleteConfirmInput"
+                placeholder="請輸入房號"
+                style="width: 100%; box-sizing: border-box; padding: 10px; text-align: center; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; color: #333; background: #fff;"
+            />
+        </div>
+    </van-dialog>
 
     <van-action-sheet v-model:show="showActionModal" title="戰績輸入">
        <div style="padding: 20px;">
@@ -225,7 +310,7 @@
                 <!-- 方式 -->
                 <van-field name="type" label="方式">
                     <template #input>
-                        <van-radio-group v-model="scoreForm.type" direction="horizontal">
+                        <van-radio-group v-model="scoreForm.type" direction="horizontal" :disabled="scoreForm.isLocked">
                             <van-radio name="zimo">自摸</van-radio>
                             <van-radio name="ron">胡牌</van-radio>
                         </van-radio-group>
@@ -272,6 +357,9 @@
                 <van-button round block type="primary" native-type="submit">
                 確認記帳
                 </van-button>
+                <van-button round block plain type="primary" @click="modifyScore" style="margin-top: 10px;">
+                    修改牌型
+                </van-button>
             </div>
           </van-form>
        </div>
@@ -279,8 +367,9 @@
 
     <CameraAI 
       v-if="showCamera" 
-      @close="showCamera = false" 
-      @on-confirm="handleAiResult" 
+      @close="closeCamera" 
+      @on-confirm="handleAiResult"
+      :initial-data="tempInitialData"
     />
   </div>
 </template>
@@ -291,16 +380,53 @@ import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
 import { showToast, showDialog } from 'vant'; // Removed showDialog import if not used, but using van-dialog component
 import CameraAI from './CameraAI.vue';
+import html2canvas from 'html2canvas';
 
 const store = useGameStore();
 const showQr = ref(false);
 const showActionModal = ref(false);
-const showDetailDialog = ref(false); // Valid
-const currentDetail = ref(''); // Valid
-const currentDetailTiles = ref(null); // Valid
-const currentAiResult = ref(null); // To store current AI result temporarily
+const showDetailDialog = ref(false); 
+const currentDetail = ref(''); 
+const currentDetailTiles = ref(null); 
+const currentAiResult = ref(null); 
 const tableScale = ref(1);
 const showCamera = ref(false);
+const showLogImport = ref(false); // Valid
+const tempInitialData = ref(null); // Data to pass when reopening camera
+
+// Delete Room State
+const showDeleteConfirm = ref(false);
+const deleteConfirmInput = ref('');
+
+const promptDeleteRoom = () => {
+    deleteConfirmInput.value = '';
+    showDeleteConfirm.value = true;
+};
+
+const handleDeleteConfirm = () => {
+    if (deleteConfirmInput.value === String(store.roomId)) {
+        store.deleteRoom();
+    } else {
+        showToast('房號輸入錯誤，取消刪除');
+    }
+};
+
+const startCamera = () => {
+    tempInitialData.value = null; // Clear old data
+    showCamera.value = true;
+};
+
+const closeCamera = () => {
+    showCamera.value = false;
+    tempInitialData.value = null;
+};
+
+const modifyScore = () => {
+    // Re-open camera with current data
+    tempInitialData.value = currentAiResult.value;
+    showActionModal.value = false;
+    showCamera.value = true;
+};
 
 // Dealer Settings
 const showDealerDialog = ref(false);
@@ -446,6 +572,110 @@ const saveDealerSettings = () => {
 // 產生連結 (假設跑在 Localhost)
 const joinUrl = computed(() => `${window.location.origin}/?room=${store.roomId}`);
 
+const showSettlementDialog = ref(false);
+const settlementContainerRef = ref(null);
+
+const downloadSettlementImage = async () => {
+    if (!settlementContainerRef.value) return;
+    
+    // Create a clone to render full height
+    const clone = settlementContainerRef.value.cloneNode(true);
+    Object.assign(clone.style, {
+        position: 'absolute',
+        top: '-9999px',
+        left: '-9999px',
+        width: '600px', // Fixed width for consistent image
+        zIndex: '-1000',
+        background: '#fff', // White background for paper look
+        fontFamily: 'sans-serif',
+        padding: '20px',    // Add padding for card look
+        borderRadius: '12px'
+    });
+    
+    // Fix body scrolling in clone
+    const cloneBody = clone.querySelector('.settlement-body');
+    if (cloneBody) {
+        cloneBody.style.maxHeight = 'none';
+        cloneBody.style.overflowY = 'visible';
+    }
+    
+    // Remove Actions from clone
+    const cloneActions = clone.querySelector('.settlement-actions');
+    if (cloneActions) cloneActions.remove();
+    
+    // Scale up the header in clone
+    const cloneTitle = clone.querySelector('.s-title');
+    if (cloneTitle) cloneTitle.style.fontSize = '24px';
+
+    document.body.appendChild(clone);
+    
+    try {
+        const canvas = await html2canvas(clone, { 
+            scale: 2, 
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#f8f8f8'
+        });
+        
+        const link = document.createElement('a');
+        link.download = `mahjong_score_${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        
+        showToast('圖片下載成功');
+    } catch (e) {
+        console.error("Download failed:", e);
+        showToast('圖片下載失敗');
+    } finally {
+        document.body.removeChild(clone);
+    }
+};
+
+const settlementRows = computed(() => {
+    // Reconstruct round-by-round scores from logs
+    // Logs are newest first? No, usually usually logs are appended. 
+    // Wait, store.logs might be reversed for display? 
+    // Let's assume store.logs is chronological (oldest first).
+    // If usage shows `v-for="log in store.logs"` and display usually wants newest on top, 
+    // typically we display `store.logs.slice().reverse()`.
+    // But `store.logs` is the raw array. 
+    // Let's check `settleRound`: `logs.value.push(newLog)`. So it's chronological.
+    
+    return store.logs.map((log) => {
+        const scores = {};
+        
+        // Init all to 0
+        store.players.forEach(p => scores[p.id] = 0);
+        
+        const winnerId = log.winnerId;
+        const loserId = log.loserId;
+        const amount = log.amount; // Total transferred to winner
+        
+        if (loserId === null) {
+            // Zimo: Winner +Total, Others - (Total/3)
+            // Note: If amount is exactly divisible by 3 usually.
+            const eachPay = amount / 3;
+            store.players.forEach(p => {
+                if (p.id === winnerId) {
+                    scores[p.id] = amount;
+                } else {
+                    scores[p.id] = -eachPay;
+                }
+            });
+        } else {
+            // Ron: Winner +Total, Loser -Total
+            scores[winnerId] = amount;
+            scores[loserId] = -amount;
+        }
+        
+        return {
+            id: log.id,
+            time: log.time,
+            scores
+        };
+    });
+});
+
 // 強化版複製功能 (支援 HTTP/IP 環境)
 const copyLink = async () => {
   const text = joinUrl.value;
@@ -480,11 +710,6 @@ const getPositionClass = (index) => {
   return positions[index];
 };
 
-const quickTestWin = () => {
-  store.settleRound(store.myPlayerId, null, 1); // 測試用
-  // showActionModal.value = false; // No longer needed
-};
-
 const updateScale = () => {
   const requiredWidth = 420;
   const availableWidth = window.innerWidth;
@@ -503,11 +728,12 @@ const scoreForm = reactive({
   baseTai: 0, // Hand Tai
   lianTai: 0, // Streak Tai
   includeLian: true, // Toggle
-  details: '' // Store scoring breakdown
+  details: '', // Store scoring breakdown
+  isLocked: false // Lock type selection if Zimo
 });
 
 const loserOptions = computed(() => {
-  if (!scoreForm.winner) return [];
+  if (scoreForm.winner === null || scoreForm.winner === undefined) return [];
   return store.players.filter(p => p.id !== scoreForm.winner);
 });
 
@@ -518,6 +744,7 @@ const handleAiResult = (result) => {
   // Pre-fill form
   scoreForm.winner = store.myPlayerId !== null ? store.myPlayerId : (store.players[0]?.id || 0);
   scoreForm.type = result.isZimo ? 'zimo' : 'ron'; // Auto-detect Zimo
+  scoreForm.isLocked = !!result.isZimo; // Lock if Zimo
   scoreForm.loser = null;
   
   // Calculate Base Tai
@@ -537,7 +764,8 @@ const handleAiResult = (result) => {
   currentAiResult.value = {
     concealed: result.concealed || [],
     exposed: result.exposed || [],
-    winningTile: result.winningTile || null
+    winningTile: result.winningTile || null,
+    settings: result.settings || {}
   };
   
   // Trigger Lian Tai calculation
@@ -574,6 +802,19 @@ const initScoreFormWinner = () => {
     // Force update Lian Tai based on current settings
     updateLianTai();
 };
+
+// Auto-select loser when type becomes 'ron' or winner changes
+watch(() => [scoreForm.type, scoreForm.winner, showActionModal.value], () => {
+    if (showActionModal.value && scoreForm.type === 'ron') {
+        const options = loserOptions.value;
+        if (options.length > 0) {
+             // If current loser is not in options (e.g. was winner), or is null
+             if (!scoreForm.loser || !options.find(p => p.id === scoreForm.loser)) {
+                 scoreForm.loser = options[0].id;
+             }
+        }
+    }
+}, { immediate: true });
 
 const updateLianTai = () => {
     if (!scoreForm.includeLian) {
@@ -635,6 +876,20 @@ const submitScore = () => {
   store.settleRound(winner, loser, tai, details, tiles); // Pass tiles
   showActionModal.value = false;
   showToast('戰績已更新');
+  
+  // Reset Form
+  setTimeout(() => {
+    scoreForm.winner = null; 
+    scoreForm.type = 'zimo';
+    scoreForm.loser = null;
+    scoreForm.tai = 0;
+    scoreForm.lianTai = 0;
+    scoreForm.details = '';
+    scoreForm.isLocked = false;
+    currentAiResult.value = null;
+    tempInitialData.value = null; // Clear modify history
+    initScoreFormWinner(); // Re-init default winner
+  }, 300); // Small delay to allow modal transition
 };
 
 onMounted(() => {
@@ -714,8 +969,8 @@ onUnmounted(() => {
         box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
         border: 3px solid white; 
         
-        &.winner { border-color: #ee0a24; animation: pop 0.3s; } 
-        &.loser { border-color: #07c160; } 
+        &.winner { border-color: #07c160; animation: pop 0.3s; } 
+        &.loser { border-color: #ee0a24; } 
         
         .score-badge { 
             position: absolute; 
@@ -812,4 +1067,97 @@ onUnmounted(() => {
 .no-logs { text-align: center; color: rgba(255,255,255,0.5); padding: 20px; font-size: 12px; }
 
 .qr-container { text-align: center; padding: 20px; }
+
+/* Settlement Dialog Styles */
+.settlement-container {
+    padding: 10px;
+    background: #f8f8f8;
+}
+
+.settlement-report-header {
+    text-align: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed #ddd; /* Separator */
+}
+.s-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+}
+.s-info {
+    font-size: 12px;
+    color: #999;
+}
+
+.settlement-header, .settlement-footer, .settlement-row {
+    display: flex;
+    align-items: center;
+}
+
+.settlement-header {
+    background: #fff;
+    border-radius: 8px 8px 0 0;
+    padding: 10px 0;
+    font-weight: bold;
+    border-bottom: 2px solid #eee;
+}
+
+.settlement-footer {
+    background: #fff;
+    border-radius: 0 0 8px 8px;
+    padding: 10px 0;
+    font-weight: bold;
+    border-top: 2px solid #eee;
+    margin-top: -1px; /* Connect to body */
+}
+
+.settlement-body {
+    max-height: 50vh;
+    overflow-y: auto;
+    background: #fff;
+    color: #333;
+}
+
+.settlement-row {
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
+}
+.settlement-row:last-child {
+    border-bottom: none;
+}
+
+.col-idx {
+    width: 30px;
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.col-player, .col-score, .col-total {
+    flex: 1;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+}
+
+.col-score { font-family: monospace; font-size: 15px; color: #bbb; }
+.col-total { font-family: monospace; font-size: 16px; font-weight: bold; }
+
+/* Colors */
+.win { color: #07c160 !important; font-weight: bold; }
+.lose { color: #ee0a24 !important; font-weight: bold; }
+
+.s-avatar { font-size: 20px; margin-bottom: 2px; }
+.s-name { font-size: 12px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50px; }
+
+.no-data { padding: 40px; text-align: center; color: #ccc; }
+.settlement-actions { margin-top: 15px; }
+
 </style>

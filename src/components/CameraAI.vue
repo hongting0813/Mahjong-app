@@ -29,24 +29,26 @@
       <div class="controls">
         <p class="hint">拖曳下方白條調整掃描範圍</p>
         <van-button 
-          type="primary" round icon="photograph" size="large" 
+          round icon="photograph" size="large" color="#4cb944"
           :loading="loading" loading-text="AI 識別中..." 
           @click="captureAndCrop"
         >
           拍照辨識
         </van-button>
         <van-button 
-          round icon="photo" size="large" class="album-btn"
+          round icon="photo" size="large" color="#6b9ac4"
           :disabled="loading"
           @click="triggerFileInput"
+          style="font-weight: bold;"
         >
           相簿選取
         </van-button>
         <van-button 
-            plain round type="warning" size="large" 
+            round size="large" icon="edit" color="#7a7978"
             @click="enterManualMode"
+            style="font-weight: bold;"
         >
-            手動輸入 (測試)
+            手動輸入
         </van-button>
         <van-button plain round type="default" size="large" @click="$emit('close')">關閉</van-button>
         <div style="text-align: center; margin-top: 5px;">
@@ -404,6 +406,7 @@ import axios from 'axios';
 import { useGameStore } from '../stores/gameStore';
 import { calculateTai, RULE_DESCRIPTIONS } from '../utils/mahjongScoring';
 
+const props = defineProps(['initialData']);
 const emit = defineEmits(['close', 'on-confirm']);
 const store = useGameStore();
 
@@ -1035,7 +1038,8 @@ const finalizeResult = () => {
         tai: calculationResult.tai, 
         desc: calculationResult.desc,
         isZimo: previewSettings.isZimo, 
-        winningTile: winningTileId.value ? tiles.value.find(t => t.id === winningTileId.value)?.code : null // Pass winning tile
+        winningTile: winningTileId.value ? tiles.value.find(t => t.id === winningTileId.value)?.code : null, // Pass winning tile
+        settings: { ...previewSettings } // Emit full settings for restore
     };
 
     emit('on-confirm', result); 
@@ -1446,6 +1450,50 @@ onMounted(() => {
     if (!isManualMode.value) startCamera();
     // Sync initial wind from store
     previewSettings.roundWind = store.currentWind;
+
+    // Restore from initialData if present
+    if (props.initialData) {
+        console.log("Restoring initial data:", props.initialData);
+        enterManualMode(); // Prepare mode
+        
+        // Restore tiles logic (need to map codes back to detailed objects if simplified)
+        // initialData.exposed/concealed are arrays of CODES or OBJECTS? 
+        // handleAiResult stores `result.concealed` which are Tile Objects usually?
+        // Let's check handleAiResult in MahjongTable.
+        // It stores: concealed: result.concealed || []
+        // CameraAI emit sends: concealed: concealedTiles.value.map(t => t.code) -> CODES!
+        // So we need to reconstruct tile objects from codes.
+        
+        const makeTiles = (codes, status) => codes.map(code => ({
+            id: Math.random().toString(36).substr(2, 9),
+            code,
+            status,
+            x: 0, y: 0 // Position doesn't matter for manual mode logic much, smartSort handles it?
+        }));
+
+        const cTiles = makeTiles(props.initialData.concealed || [], 'concealed');
+        const eTiles = makeTiles(props.initialData.exposed || [], 'exposed');
+        tiles.value = [...cTiles, ...eTiles];
+        
+        // Restore Settings
+        if (props.initialData.settings) {
+            Object.assign(previewSettings, props.initialData.settings);
+        }
+        
+        // Restore Winning Tile
+        if (props.initialData.winningTile) {
+            const wCode = props.initialData.winningTile;
+            // Find a tile with this code in concealed
+            const t = tiles.value.find(t => t.status === 'concealed' && t.code === wCode);
+            if (t) winningTileId.value = t.id;
+        }
+
+        // Run calcs
+        nextTick(runCalculation);
+        // Show preview immediately? Or let user edit?
+        // User wants to MODIFY, so show review screen (which enterManualMode does).
+        // If they want to preview, they click confirm.
+    }
 });
 onUnmounted(stopCamera);
 </script>
@@ -1633,12 +1681,21 @@ onUnmounted(stopCamera);
 }
 
 /* Add Button in Corner */
+/* Add Button in Corner */
 .add-btn-corner {
   position: absolute;
   bottom: 8px;
   right: 8px;
+  width: 32px !important;    /* Force width */
+  height: 32px !important;   /* Force height equivalent */
+  padding: 0 !important;     /* Remove padding that causes oval shape */
+  border-radius: 50% !important; 
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   z-index: 10;
+  opacity: 0.7;
 }
 
 .review-actions { padding: 10px 20px 20px; background: #fff; display: flex; gap: 10px; flex-shrink: 0; }
