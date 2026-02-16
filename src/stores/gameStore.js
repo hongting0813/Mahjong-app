@@ -143,9 +143,15 @@ export const useGameStore = defineStore('game', () => {
       return;
     }
 
-    // ✨ 自動判斷連線網址
-    const currentDomain = window.location.hostname;
-    const socketUrl = `https://${currentDomain}:3001`;
+    // ✨ 自動判斷連線網址 (支援雲端與本機切換)
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isHttps = window.location.protocol === 'https:';
+
+    // 如果是本機開發，通常後端跑在 3001
+    // 如果是雲端或正式部署，前端與後端通常在同一個 Origin
+    const socketUrl = isLocal
+      ? `${isHttps ? 'https' : 'http'}://${window.location.hostname}:3001`
+      : `${window.location.protocol}//${window.location.host}`;
 
     console.log(`🚀 準備連線到後端: ${socketUrl}`);
 
@@ -284,10 +290,13 @@ export const useGameStore = defineStore('game', () => {
 
     // 儲存完整戰績記錄檔 (保存為 JSON)
     try {
-      const ip = window.location.hostname;
-      const protocol = 'https:';
-      const port = '3001';
-      await axios.post(`${protocol}//${ip}:${port}/api/save-game`, {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const isHttps = window.location.protocol === 'https:';
+      const apiUrlBase = isLocal
+        ? `${isHttps ? 'https' : 'http'}://${window.location.hostname}:3001`
+        : `${window.location.protocol}//${window.location.host}`;
+
+      await axios.post(`${apiUrlBase}/api/save-game`, {
         roomId: roomId.value, // Added roomId
         sessionId: sessionId.value, // Added sessionId
         timestamp: new Date().toISOString(),

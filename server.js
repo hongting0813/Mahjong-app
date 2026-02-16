@@ -1,5 +1,6 @@
 import express from 'express';
-import { createServer } from 'https';
+import { createServer as createHttpsServer } from 'https';
+import { createServer as createHttpServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import os from 'os';
@@ -19,14 +20,24 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// 2. 讀取憑證
-const httpsOptions = {
-  key: fs.readFileSync('./key.pem'),
-  cert: fs.readFileSync('./cert.pem')
-};
+// 2. 判斷環境與憑證 (支援雲端部署)
+const IS_PROD = process.env.NODE_ENV === 'production';
+const hasCerts = fs.existsSync('./key.pem') && fs.existsSync('./cert.pem');
 
-// 3. 建立 HTTPS 伺服器
-const httpServer = createServer(httpsOptions, app);
+let httpServer;
+if (hasCerts && !IS_PROD) {
+  // 本機開發環境且有憑證，使用 HTTPS
+  const httpsOptions = {
+    key: fs.readFileSync('./key.pem'),
+    cert: fs.readFileSync('./cert.pem')
+  };
+  httpServer = createHttpsServer(httpsOptions, app);
+  console.log('🔒 Using HTTPS for local development');
+} else {
+  // 雲端環境或無憑證，使用 HTTP (SSL 由 Load Balancer 處理)
+  httpServer = createHttpServer(app);
+  console.log('🌐 Using HTTP (Cloud/Production mode)');
+}
 
 const io = new Server(httpServer, {
   cors: {
@@ -36,6 +47,13 @@ const io = new Server(httpServer, {
   },
   allowEIO3: true
 });
+
+// 2.5 服務靜態檔案 (Vue Build)
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  console.log('📁 Serving static files from /dist');
+}
 
 // --- 儲存 Debug 圖片 ---
 // --- 儲存路徑設定 ---
@@ -319,7 +337,17 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = 3001;
+// 4. SPA 路由支援 (將所有不匹配的資源導向 index.html)
+app.get(/.*/, (req, res) => {
+  const indexFile = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexFile)) {
+    res.sendFile(indexFile);
+  } else {
+    res.status(404).send('Not Found');
+  }
+});
+
+const PORT = process.env.PORT || 3001;
 
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
@@ -335,11 +363,12 @@ function getLocalIp() {
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   const ip = getLocalIp();
+  const protocol = (hasCerts && !IS_PROD) ? 'https' : 'http';
   console.log(`
-  🚀 後端伺服器已啟動！
+  🚀 Mahjong Scoring 伺服器已啟動！
   -----------------------------------------
-  🏠 本機連線: https://localhost:${PORT}
-  📡 區域網路: https://${ip}:${PORT}
+  🏠 連結網址: ${protocol}://localhost:${PORT}
+  📡 區域網路: ${protocol}://${ip}:${PORT}
   -----------------------------------------
   `);
 });
