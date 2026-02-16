@@ -287,6 +287,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('toggle_payment', ({ roomId, logId, playerId }) => {
+    if (rooms[roomId]) {
+      const log = rooms[roomId].logs.find(l => l.id === logId);
+      if (log) {
+        if (!log.payments) log.payments = {};
+
+        // 切換支付狀態
+        const current = log.payments[playerId]?.isPaid || false;
+        log.payments[playerId] = {
+          ...log.payments[playerId],
+          isPaid: !current
+        };
+
+        io.to(roomId).emit('state_updated', rooms[roomId]);
+        saveRooms();
+      }
+    }
+  });
+
   socket.on('delete_room', (roomId) => {
     if (rooms[roomId]) {
       // 1. Delete from memory

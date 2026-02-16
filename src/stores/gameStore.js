@@ -221,12 +221,32 @@ export const useGameStore = defineStore('game', () => {
 
     if (loserId === null) {
       // 自摸
+      const baseAmount = amount; // 基本金額（基底分 + 台數分）
+      const taiAmount = Number(settings.value.tai); // 一台的金額
+
+      // 計算莊家多付的台數：2 × 連莊次數 + 1
+      const dealerExtraTai = (dealerStreak.value * 2) + 1;
+      const dealerAmount = baseAmount + (taiAmount * dealerExtraTai); // 莊家多付連莊台數
+
+      let totalWin = 0; // 贏家總收入
+
       newPlayers.forEach(p => {
-        if (p.id === winnerId) p.score += amount * 3;
-        else p.score -= amount;
+        if (p.id === winnerId) {
+          // 先計算贏家能收到多少
+          newPlayers.forEach(loser => {
+            if (loser.id !== winnerId) {
+              totalWin += (loser.id === dealerId.value) ? dealerAmount : baseAmount;
+            }
+          });
+          p.score += totalWin;
+        } else {
+          // 輸家付錢
+          p.score -= (p.id === dealerId.value) ? dealerAmount : baseAmount;
+        }
       });
+
       logDesc = `自摸 ${taiCount} 台`;
-      logAmount = amount * 3;
+      logAmount = totalWin;
     } else {
       // 放槍
       const winner = newPlayers.find(p => p.id === winnerId);
@@ -249,7 +269,10 @@ export const useGameStore = defineStore('game', () => {
       amount: logAmount,
       details: details || '', // Store raw details
       tai: taiCount,
-      tiles: tiles || null    // Store tile state
+      tiles: tiles || null,    // Store tile state
+      dealerId: dealerId.value,  // 儲存當時的莊家 ID
+      dealerStreak: dealerStreak.value,  // 儲存當時的連莊次數
+      payments: {} // 初始化支付狀態
     };
 
     // 發送給後端 Socket 同步
@@ -374,6 +397,21 @@ export const useGameStore = defineStore('game', () => {
     ];
   });
 
+  /**
+   * 切換個別玩家在某局的支付狀態 (已付現/未付現)
+   */
+  const togglePayment = (logId, playerId) => {
+    if (!socket.value || !roomId.value) return;
+
+    // 雖然我們可以本地先改，但為了確保狀態一致，
+    // 還是發一個事件讓後端處理並廣播更新 rooms 資料。
+    socket.value.emit('toggle_payment', {
+      roomId: roomId.value,
+      logId: logId,
+      playerId: playerId
+    });
+  };
+
   // 4. 重置狀態 (離開房間回到首頁時)
   const resetState = () => {
     roomId.value = null;
@@ -408,6 +446,7 @@ export const useGameStore = defineStore('game', () => {
     dealerStreak,
     setDealer,
     calculateLianTai,
-    updateDealerLogic
+    updateDealerLogic,
+    togglePayment
   };
 });

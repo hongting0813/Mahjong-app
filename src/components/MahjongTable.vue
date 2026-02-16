@@ -92,7 +92,7 @@
           <span class="time">{{ log.time }}</span>
           <span class="desc">
             <span class="winner-name">{{ log.winner }}</span> {{ log.desc }}
-            <span v-if="log.details" class="detail-link" @click.stop="showLogDetails(log)">詳細 ></span>
+            <span class="detail-link" @click.stop="showLogDetails(log)">詳細 ></span>
           </span>
           <span class="amt">+{{ log.amount }}</span>
         </div>
@@ -146,8 +146,30 @@
                     </van-cell>
                 </div>
             </div>
-            <div v-else-if="!currentDetailTiles" style="text-align: center; color: #999; padding: 20px;">
-                {{ currentDetail }}
+
+            <!-- 3. 支付標記 (New Feature) -->
+            <div style="margin-top: 20px;">
+                <div style="font-size: 13px; font-weight: bold; color: #555; margin-bottom: 8px; text-align: left;">支付狀態 (勾選代表已付現)</div>
+                <div style="background: #fff; border: 1px solid #ebedf0; border-radius: 8px;">
+                    <van-cell 
+                        v-for="loser in currentDetailLosers" 
+                        :key="loser.id"
+                        :title="loser.name"
+                        title-style="text-align: left;"
+                    >
+                        <template #right-icon>
+                            <van-switch 
+                                :model-value="loser.isPaid" 
+                                size="18px"
+                                active-color="#07c160"
+                                @update:model-value="store.togglePayment(selectedLogId, loser.id)"
+                            />
+                        </template>
+                    </van-cell>
+                </div>
+                <div style="font-size: 11px; color: #999; margin-top: 6px; text-align: left;">
+                    * 標記為已付現的局數，將不計入結算表下方的「待結餘額」。
+                </div>
             </div>
         </div>
     </van-dialog>
@@ -221,6 +243,8 @@
         <div class="settlement-report-header">
             <div class="s-title">麻將戰績表</div>
             <div class="s-info">
+                <span>房號: {{ store.roomId }}</span>
+                <span style="margin: 0 8px;">|</span>
                 <span>{{ new Date().toLocaleDateString() }}</span>
                 <span style="margin: 0 8px;">|</span>
                 <span>底 {{ store.settings.base }} / 台 {{ store.settings.tai }}</span>
@@ -238,14 +262,18 @@
         
         <!-- Score Rows -->
         <div class="settlement-body">
-            <div v-for="(row, idx) in settlementRows" :key="idx" class="settlement-row">
+            <div v-for="(row, idx) in settlementRows" :key="idx" 
+                 class="settlement-row clickable" 
+                 @click="handleSettlementRowClick(row)">
                 <div class="col-idx">{{ idx + 1 }}</div>
                 <div v-for="p in store.players" :key="p.id" class="col-score" 
                      :class="{ 
                         'win': row.scores[p.id] > 0, 
-                        'lose': row.scores[p.id] < 0 
+                        'lose': row.scores[p.id] < 0,
+                        'paid': row.payments?.[p.id]?.isPaid 
                      }">
-                     {{ row.scores[p.id] > 0 ? '+' : '' }}{{ row.scores[p.id] !== 0 ? row.scores[p.id] : '-' }}
+                     <span class="score-num">{{ row.scores[p.id] > 0 ? '+' : '' }}{{ row.scores[p.id] !== 0 ? row.scores[p.id] : '-' }}</span>
+                     <van-icon v-if="row.payments?.[p.id]?.isPaid" name="success" class="paid-icon" />
                 </div>
             </div>
             <div v-if="settlementRows.length === 0" class="no-data">暫無紀錄</div>
@@ -257,6 +285,15 @@
             <div v-for="p in store.players" :key="p.id" class="col-total" 
                  :class="{ 'win': p.score > 0, 'lose': p.score < 0 }">
                  {{ p.score > 0 ? '+' : '' }}{{ p.score }}
+            </div>
+        </div>
+
+        <!-- Unpaid Balances (Remaining to pay/receive) -->
+        <div class="settlement-unpaid">
+            <div class="col-idx" style="font-size: 10px; line-height: 1.2;">待結<br/>餘額</div>
+            <div v-for="p in store.players" :key="p.id" class="col-total" 
+                 :class="{ 'win': unpaidBalances[p.id] > 0, 'lose': unpaidBalances[p.id] < 0 }">
+                 {{ unpaidBalances[p.id] > 0 ? '+' : '' }}{{ unpaidBalances[p.id] }}
             </div>
         </div>
         
@@ -388,6 +425,7 @@ const showActionModal = ref(false);
 const showDetailDialog = ref(false); 
 const currentDetail = ref(''); 
 const currentDetailTiles = ref(null); 
+const selectedLogId = ref(null); // 追蹤當前詳細視窗對應的記錄 ID
 const currentAiResult = ref(null); 
 const tableScale = ref(1);
 const showCamera = ref(false);
@@ -522,8 +560,24 @@ const calculateStats = (playerId) => {
                 myAmount = log.amount;
             } else {
                  if (log.loserId === null) {
-                     // Zimo: I pay 1/3
-                     myAmount = -(log.amount / 3);
+                     // Zimo: 需要從記錄中重新計算我付了多少
+                     // 莊家多付的台數根據連莊狀態：2 × 連莊次數 + 1
+                     const taiValue = Number(store.settings.tai);
+                     const taiCount = log.tai || 0;
+                     const individualBase = Number(store.settings.base) + (taiCount * taiValue);
+                     
+                     // 使用該局記錄的莊家 ID 和連莊次數
+                     const logDealerId = log.dealerId;
+                     const logDealerStreak = log.dealerStreak || 0;
+                     const isDealerMe = (playerId === logDealerId);
+                     
+                     if (isDealerMe) {
+                         // 莊家多付連莊台數（使用記錄的連莊次數）
+                         const dealerExtraTai = (logDealerStreak * 2) + 1;
+                         myAmount = -(individualBase + (taiValue * dealerExtraTai));
+                     } else {
+                         myAmount = -individualBase;
+                     }
                  } else {
                      // Ron: I pay full
                      myAmount = -log.amount;
@@ -603,6 +657,13 @@ const downloadSettlementImage = async () => {
     const cloneActions = clone.querySelector('.settlement-actions');
     if (cloneActions) cloneActions.remove();
     
+    // Ensure unpaid balances row is visible in clone (might be at bottom)
+    const cloneUnpaid = clone.querySelector('.settlement-unpaid');
+    if (cloneUnpaid) {
+        cloneUnpaid.style.marginTop = '10px';
+        cloneUnpaid.style.borderTop = '2px dashed #ee0a24';
+    }
+    
     // Scale up the header in clone
     const cloneTitle = clone.querySelector('.s-title');
     if (cloneTitle) cloneTitle.style.fontSize = '24px';
@@ -631,17 +692,18 @@ const downloadSettlementImage = async () => {
     }
 };
 
+const handleSettlementRowClick = (row) => {
+    // 從 store.logs 中找出完整的 log 物件
+    const fullLog = store.logs.find(l => l.id === row.id);
+    if (fullLog) {
+        showLogDetails(fullLog);
+    }
+};
+
 const settlementRows = computed(() => {
     // Reconstruct round-by-round scores from logs
-    // Logs are newest first? No, usually usually logs are appended. 
-    // Wait, store.logs might be reversed for display? 
-    // Let's assume store.logs is chronological (oldest first).
-    // If usage shows `v-for="log in store.logs"` and display usually wants newest on top, 
-    // typically we display `store.logs.slice().reverse()`.
-    // But `store.logs` is the raw array. 
-    // Let's check `settleRound`: `logs.value.push(newLog)`. So it's chronological.
-    
-    return store.logs.map((log) => {
+    // 透過 [...].reverse() 確保按時間順序 (最早的在上面) 顯示
+    return [...store.logs].reverse().map((log) => {
         const scores = {};
         
         // Init all to 0
@@ -652,14 +714,23 @@ const settlementRows = computed(() => {
         const amount = log.amount; // Total transferred to winner
         
         if (loserId === null) {
-            // Zimo: Winner +Total, Others - (Total/3)
-            // Note: If amount is exactly divisible by 3 usually.
-            const eachPay = amount / 3;
+            // Zimo: 莊家多付連莊台數（2 × 連莊次數 + 1）
+            const taiCount = log.tai || 0;
+            const baseAmount = Number(store.settings.base) + (taiCount * Number(store.settings.tai));
+            const taiValue = Number(store.settings.tai);
+            
+            // 使用該局記錄的莊家 ID 和連莊次數
+            const logDealerId = log.dealerId;
+            const logDealerStreak = log.dealerStreak || 0;
+            const dealerExtraTai = (logDealerStreak * 2) + 1;
+            const dealerAmount = baseAmount + (taiValue * dealerExtraTai);
+            
             store.players.forEach(p => {
                 if (p.id === winnerId) {
-                    scores[p.id] = amount;
+                    scores[p.id] = amount; // 贏家收的總金額
                 } else {
-                    scores[p.id] = -eachPay;
+                    // 輸家根據是否為該局的莊家決定支付金額
+                    scores[p.id] = (p.id === logDealerId) ? -dealerAmount : -baseAmount;
                 }
             });
         } else {
@@ -670,10 +741,65 @@ const settlementRows = computed(() => {
         
         return {
             id: log.id,
-            time: log.time,
-            scores
+            scores,
+            payments: log.payments || {} // 傳遞支付狀態
         };
     });
+});
+
+/**
+ * 計算每位玩家的待結餘額 (扣除已標記付現的部分)
+ */
+const unpaidBalances = computed(() => {
+    const balances = {};
+    store.players.forEach(p => balances[p.id] = 0);
+
+    settlementRows.value.forEach(row => {
+        store.players.forEach(p => {
+            const score = row.scores[p.id];
+            if (score === 0) return;
+
+            // 判斷是否已結清
+            // 贏家：如果輸家（所有的）都付了，贏家才算結清？不，贏家是看「誰付給他」
+            // 邏輯：對於各個玩家，如果該玩家是輸家且 isPaid=true，則不計入餘額。
+            // 如果該玩家是贏家，則總額扣除掉那些 isPaid=true 的輸家的支付金額。
+
+            if (score < 0) {
+                // 我是輸家
+                const isPaid = row.payments[p.id]?.isPaid || false;
+                if (!isPaid) {
+                    balances[p.id] += score;
+                }
+            } else {
+                // 我是贏家 (只有自摸或胡牌會正分)
+                // 找出這筆記錄中所有為我支付且「尚未付清」的人
+                const log = store.logs.find(l => l.id === row.id);
+                if (log) {
+                    if (log.loserId === null) {
+                        // 自摸：檢查三個閒家
+                        store.players.forEach(pOther => {
+                            if (pOther.id !== p.id) {
+                                if (!(log.payments?.[pOther.id]?.isPaid)) {
+                                    // 重新計算 individual amount (莊家多付)
+                                    const baseAmount = Number(store.settings.base) + ((log.tai || 0) * Number(store.settings.tai));
+                                    const isDealerOther = (pOther.id === log.dealerId);
+                                    const dealerExtraTai = ((log.dealerStreak || 0) * 2) + 1;
+                                    const amountOther = isDealerOther ? (baseAmount + (Number(store.settings.tai) * dealerExtraTai)) : baseAmount;
+                                    balances[p.id] += amountOther;
+                                }
+                            }
+                        });
+                    } else {
+                        // 放槍：檢查單一輸家
+                        if (!(log.payments?.[log.loserId]?.isPaid)) {
+                            balances[p.id] += log.amount;
+                        }
+                    }
+                }
+            }
+        });
+    });
+    return balances;
 });
 
 // 強化版複製功能 (支援 HTTP/IP 環境)
@@ -836,6 +962,7 @@ const updateLianTai = () => {
 const showLogDetails = (log) => {
     currentDetail.value = log.details || '無詳細資料';
     currentDetailTiles.value = log.tiles || null;
+    selectedLogId.value = log.id; // 保存當前記錄 ID
     showDetailDialog.value = true;
 };
 
@@ -852,6 +979,41 @@ const currentDetailList = computed(() => {
         }
         return { name: str, tai: '' };
     });
+});
+
+// 計算當前詳細視窗中的輸家列表及其支付狀態
+const currentLogData = computed(() => {
+    return store.logs.find(l => l.id === selectedLogId.value);
+});
+
+const currentDetailLosers = computed(() => {
+    const log = currentLogData.value;
+    if (!log) return [];
+    
+    const losers = [];
+    if (log.loserId === null) {
+        // 自摸：除了贏家以外都是輸家
+        store.players.forEach(p => {
+            if (p.id !== log.winnerId) {
+                losers.push({
+                    id: p.id,
+                    name: p.name,
+                    isPaid: log.payments?.[p.id]?.isPaid || false
+                });
+            }
+        });
+    } else {
+        // 放槍：只有一個輸家
+        const p = store.players.find(p => p.id === log.loserId);
+        if (p) {
+            losers.push({
+                id: p.id,
+                name: p.name,
+                isPaid: log.payments?.[p.id]?.isPaid || false
+            });
+        }
+    }
+    return losers;
 });
 
 const submitScore = () => {
@@ -1091,7 +1253,7 @@ onUnmounted(() => {
     color: #999;
 }
 
-.settlement-header, .settlement-footer, .settlement-row {
+.settlement-header, .settlement-footer, .settlement-row, .settlement-unpaid {
     display: flex;
     align-items: center;
 }
@@ -1112,6 +1274,14 @@ onUnmounted(() => {
     border-top: 2px solid #eee;
     margin-top: -1px; /* Connect to body */
 }
+.settlement-unpaid {
+    background: #fff5f5; /* Light red/alert background */
+    border-radius: 0 0 8px 8px;
+    padding: 10px 0;
+    font-weight: bold;
+    border-top: 2px dashed #ee0a24;
+    margin-top: -1px;
+}
 
 .settlement-body {
     max-height: 50vh;
@@ -1124,6 +1294,10 @@ onUnmounted(() => {
     padding: 8px 0;
     border-bottom: 1px solid #f0f0f0;
     font-size: 14px;
+    transition: background 0.2s;
+}
+.settlement-row.clickable:active {
+    background: #f0f0f0;
 }
 .settlement-row:last-child {
     border-bottom: none;
@@ -1147,8 +1321,26 @@ onUnmounted(() => {
     color: #333;
 }
 
-.col-score { font-family: monospace; font-size: 15px; color: #bbb; }
+.col-score { 
+    font-family: monospace; 
+    font-size: 15px; 
+    color: #bbb;
+    position: relative;
+}
+.col-score.paid .score-num {
+    text-decoration: line-through;
+    opacity: 0.5;
+    color: #999 !important;
+}
 .col-total { font-family: monospace; font-size: 16px; font-weight: bold; }
+.paid-icon {
+    position: absolute;
+    top: 0;
+    right: 2px;
+    font-size: 10px;
+    color: #07c160;
+}
+.score-num { position: relative; z-index: 1; }
 
 /* Colors */
 .win { color: #07c160 !important; font-weight: bold; }
