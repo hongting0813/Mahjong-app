@@ -1,61 +1,235 @@
 <template>
-  <van-popup 
-    :show="show" 
-    position="right" 
-    :style="{ width: '85%', height: '100%' }"
-    @update:show="$emit('update:show', $event)"
-  >
-    <div style="display: flex; flex-direction: column; height: 100%; background: #f7f8fa;">
-      <van-nav-bar title="操作幫助指南" left-arrow @click-left="$emit('update:show', false)" />
-      
-      <div style="flex: 1; overflow-y: auto; padding-bottom: 30px;">
-        <van-collapse v-model="activeNames">
-          <van-collapse-item title="🀄️ 核心操作 (新手必看)" name="1">
-            <div style="font-size: 14px; line-height: 1.6; color: #666;">
-              <p><b>● 如何記帳？</b><br/>進入房間後，點擊牌桌中央的「🀄️」圖標，即可開啟手動記帳視窗。</p>
-              <p><b>● 查看我的戰績？</b><br/>點擊您的「頭像」或「分數」，可開啟個人統計，查看胡牌數及最大台數。</p>
-              <p><b>● 如何更換莊家？</b><br/>長按玩家頭像（或點擊個人戰績內的按鈕）即可更換莊家並設定「連莊拉莊」次數。</p>
-            </div>
-          </van-collapse-item>
-          
-          <van-collapse-item title="✨ 特色功能 (高手進階)" name="2">
-            <div style="font-size: 14px; line-height: 1.6; color: #666;">
-              <p><b>● 計分預覽 (預防錯誤)</b><br/>在記帳送出前，底部會出現橘色區塊，明確顯示該局預計的金額變動。</p>
-              <p><b>● 支付標記 (對帳神器)</b><br/>點擊紀錄中的「詳細 >」，可對個別輸家勾選「已付現」。結算表底部的「待結餘額」會自動扣除已付額。</p>
-              <p><b>● 撤銷/刪除記錄</b><br/>若記錯帳，進入該局「詳細 >」最底部點擊「刪除記錄」，系統會自動退回分數。</p>
-            </div>
-          </van-collapse-item>
-          
-          <van-collapse-item title="⚖️ 計分規則 (台灣麻將)" name="3">
-            <div style="font-size: 14px; line-height: 1.6; color: #666;">
-              <p><b>● 莊家加計計算式</b><br/>採用 <code>(連莊次數 × 2) + 1</code> 規則：</p>
-              <ul>
-                <li>一加一台 (連0)：1 台</li>
-                <li>連一拉一 (連1)：3 台</li>
-                <li>連二拉二 (連2)：5 台</li>
-                <li>依此類推...</li>
-              </ul>
-              <p><b>● AI 算台建議</b><br/>拍照時請確保手牌整齊且光線充足，中洞、邊張等特殊台數建議手動勾選核對。</p>
-            </div>
-          </van-collapse-item>
-        </van-collapse>
+  <Teleport to="body">
+    <div v-if="show" class="tour-overlay" @click.self="handleOverlayClick">
+      <!-- Spotlight Mask -->
+      <div 
+        class="spotlight" 
+        :style="spotlightStyle"
+      ></div>
 
-        <div style="padding: 20px; text-align: center; color: #999; font-size: 12px;">
-          祝您大發利市，把把自摸！🀄️✨
+      <!-- Tooltip Content -->
+      <div 
+        v-if="currentStep" 
+        class="tour-tooltip" 
+        :style="tooltipStyle"
+      >
+        <div class="tooltip-header">
+          <span class="step-counter">步驟 {{ currentStepIndex + 1 }} / {{ steps.length }}</span>
+          <van-icon name="cross" class="close-tour" @click="$emit('update:show', false)" />
+        </div>
+        <div class="tooltip-body">
+          <h3 class="tooltip-title">{{ currentStep.title }}</h3>
+          <p class="tooltip-content">{{ currentStep.content }}</p>
+        </div>
+        <div class="tooltip-footer">
+          <van-button 
+            v-if="currentStepIndex > 0" 
+            size="small" 
+            plain 
+            round 
+            @click="prevStep"
+          >上一步</van-button>
+          <div style="flex: 1"></div>
+          <van-button 
+            size="small" 
+            type="primary" 
+            round 
+            @click="nextStep"
+          >{{ isLastStep ? '完成' : '下一步' }}</van-button>
         </div>
       </div>
     </div>
-  </van-popup>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 
-defineProps({
-  show: Boolean
+const props = defineProps({
+  show: Boolean,
+  steps: {
+    type: Array,
+    default: () => []
+  }
 });
 
-defineEmits(['update:show']);
+const emit = defineEmits(['update:show']);
 
-const activeNames = ref(['1']);
+const currentStepIndex = ref(0);
+const targetRect = ref(null);
+
+const currentStep = computed(() => props.steps[currentStepIndex.value]);
+const isLastStep = computed(() => currentStepIndex.value === props.steps.length - 1);
+
+// Spotlight Style: Using box-shadow to create a dark overlay with a hole
+const spotlightStyle = computed(() => {
+  if (!targetRect.value) return { display: 'none' };
+  
+  const { top, left, width, height } = targetRect.value;
+  const padding = 5;
+  
+  return {
+    top: `${top - padding}px`,
+    left: `${left - padding}px`,
+    width: `${width + padding * 2}px`,
+    height: `${height + padding * 2}px`,
+    boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)'
+  };
+});
+
+// Tooltip position logic
+const tooltipStyle = computed(() => {
+  if (!targetRect.value) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+  
+  const { top, left, width, height } = targetRect.value;
+  const winHeight = window.innerHeight;
+  const winWidth = window.innerWidth;
+  const tooltipPadding = 12;
+  const tooltipWidth = 280; // Should match style
+  
+  let styles = {};
+  
+  // Vertical Position
+  // If too close to bottom (e.g. QR bubble), show above
+  if (top + height + 200 > winHeight) {
+    styles.bottom = `${winHeight - top + tooltipPadding}px`;
+  } else {
+    styles.top = `${top + height + tooltipPadding}px`;
+  }
+  
+  // Horizontal Position & Centering
+  let horizontalCenter = left + width / 2;
+  
+  // Adjust if too close to left or right edges
+  if (horizontalCenter - tooltipWidth / 2 < 10) {
+    styles.left = '10px';
+    styles.transform = 'none';
+  } else if (horizontalCenter + tooltipWidth / 2 > winWidth - 10) {
+    styles.right = '10px';
+    styles.transform = 'none';
+  } else {
+    styles.left = `${horizontalCenter}px`;
+    styles.transform = 'translateX(-50%)';
+  }
+  
+  return styles;
+});
+
+const updateTargetRect = () => {
+  if (!props.show || !currentStep.value) return;
+  
+  const el = document.querySelector(currentStep.value.target);
+  if (el) {
+    targetRect.value = el.getBoundingClientRect();
+  } else {
+    targetRect.value = null; // Target not found, maybe show in center
+  }
+};
+
+const nextStep = () => {
+  if (isLastStep.value) {
+    emit('update:show', false);
+  } else {
+    currentStepIndex.value++;
+    updateTargetRect();
+  }
+};
+
+const prevStep = () => {
+  if (currentStepIndex.value > 0) {
+    currentStepIndex.value--;
+    updateTargetRect();
+  }
+};
+
+const handleOverlayClick = () => {
+  // Prevent closing on backdrop click if needed, or skip to next
+};
+
+// Re-calculate rect on scroll/resize
+watch(() => props.show, (newVal) => {
+  if (newVal) {
+    currentStepIndex.value = 0;
+    // Delay slightly to ensure target is rendered
+    setTimeout(updateTargetRect, 300);
+  }
+});
+
+onMounted(() => {
+  window.addEventListener('resize', updateTargetRect);
+  window.addEventListener('scroll', updateTargetRect, true);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateTargetRect);
+  window.removeEventListener('scroll', updateTargetRect, true);
+});
 </script>
+
+<style scoped>
+.tour-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10000;
+  pointer-events: auto;
+}
+
+.spotlight {
+  position: absolute;
+  border-radius: 12px;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.tour-tooltip {
+  position: absolute;
+  width: 280px;
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  z-index: 10001;
+  transition: all 0.3s ease;
+}
+
+.tooltip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.step-counter {
+  font-size: 12px;
+  color: #999;
+  font-weight: 500;
+}
+
+.close-tour {
+  font-size: 18px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.tooltip-title {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.tooltip-content {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.tooltip-footer {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+}
+</style>

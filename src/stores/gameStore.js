@@ -145,11 +145,12 @@ export const useGameStore = defineStore('game', () => {
 
     // ✨ 自動判斷連線網址 (支援雲端與本機切換)
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const protocol = window.location.protocol; // http: 或 https:
 
     // 如果是本機開發，連線到 3001 埠
     // 如果是雲端部署，直接使用當前 Origin (連線到標準 443 埠)
     const socketUrl = isLocal
-      ? `http://${window.location.hostname}:3001`
+      ? `${protocol}//${window.location.hostname}:3001`
       : window.location.origin;
 
     console.log(`🚀 準備連線到後端: ${socketUrl}`);
@@ -157,7 +158,6 @@ export const useGameStore = defineStore('game', () => {
     // 建立 Socket 連線
     if (!socket.value) {
       socket.value = io(socketUrl, {
-        transports: ['websocket'], // 強制使用 WebSocket，減少 CORS 問題
         reconnectionAttempts: 5    // 斷線重試 5 次
       });
     } else {
@@ -491,6 +491,7 @@ export const useGameStore = defineStore('game', () => {
     setDealer,
     calculateLianTai,
     updateDealerLogic,
-    togglePayment
+    togglePayment,
+    deleteLog
   };
 });

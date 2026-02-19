@@ -20,7 +20,7 @@
     </div>
 
     <!-- 全局幫助指南 -->
-    <HelpGuide v-model:show="showHelp" />
+    <HelpGuide v-model:show="showHelp" :steps="currentSteps" />
   </div>
 </template>
 
@@ -36,6 +36,46 @@ const route = useRoute();
 const router = useRouter();
 const store = useGameStore();
 const showHelp = ref(false);
+
+const roomSteps = [
+  {
+    target: '#tour-table',
+    title: '麻將桌現場',
+    content: '這裡是您的對戰牌桌，顯示了所有玩家的座位、分數、以及目前的莊家狀態。'
+  },
+  {
+    target: '#tour-center',
+    title: '核心記帳區 🀄️',
+    content: '點擊中央的 🀄️ 圖示，即可開啟手動記帳。系統會根據目前的莊家自動計算正確的台數變動。'
+  },
+  {
+    target: '#tour-header-btns',
+    title: '功能控制',
+    content: '「結算」可以查看整場的總損益；「邀請」則會顯示 QR Code 讓牌友掃描加入。'
+  },
+  {
+    target: '#tour-logs',
+    title: '戰況紀錄區',
+    content: '每一局的記帳結果都會出現在這裡。點擊「詳細」可以查看支付狀態或撤銷記錯的內容。'
+  }
+];
+
+const seatSteps = [
+  {
+    target: '.seat-selector h2',
+    title: '選擇座位',
+    content: '進入房間後，請先點擊您的頭像來選擇位置。'
+  },
+  {
+    target: '#tour-seat-grid',
+    title: '確認身份',
+    content: '選擇座位後，系統會將您定位在畫面下方，方便您以正確視角觀看戰局。'
+  }
+];
+
+const currentSteps = computed(() => {
+  return store.myPlayerId === null ? seatSteps : roomSteps;
+});
 
 const roomId = computed(() => route.params.roomId);
 

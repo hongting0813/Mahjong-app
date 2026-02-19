@@ -2,14 +2,14 @@
   <div class="table-view" :style="{ background: store.settings.bgColor }">
     <div class="header">
       <div class="room-info">底 {{ store.settings.base }} / 台 {{ store.settings.tai }}</div>
-      <div style="display: flex; gap: 8px; align-items: center;">
+      <div style="display: flex; gap: 8px; align-items: center;" id="tour-header-btns">
         <van-button icon="chart-trending-o" size="small" round type="primary" @click="showSettlementDialog = true">結算</van-button>
         <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
       </div>
     </div>
 
     <!-- 上半部：麻將桌 (固定高度/比例，佔 60%) -->
-    <div class="table-area">
+    <div class="table-area" id="tour-table">
       <van-dialog 
       v-model:show="showDealerDialog" 
       title="莊家與連莊設定" 
@@ -41,7 +41,7 @@
     </van-dialog>
 
       <div class="mahjong-table" :style="{ transform: `scale(${tableScale})` }">
-        <div class="center-zone" @click="showActionModal = true">
+        <div class="center-zone" @click="showActionModal = true" id="tour-center">
           <div class="center-content" style="text-align: center; display: flex; flex-direction: column; align-items: center;">
             <div class="logo">🀄️</div>
             <div>記帳</div>
@@ -85,7 +85,7 @@
     </div>
 
     <!-- 下半部：戰況 (佔 30%) -->
-    <div class="logs-panel">
+    <div class="logs-panel" id="tour-logs">
       <div class="logs-title">戰況速報</div>
       <div class="logs-list">
         <div v-for="log in store.logs" :key="log.id" class="log-item">

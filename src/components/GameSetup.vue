@@ -2,7 +2,7 @@
   <div class="setup-container">
     <h2 class="title">🀄️ 開房設定</h2>
     
-    <div class="color-picker">
+    <div class="color-picker" id="tour-setup-color">
       <span v-for="color in bgColors" :key="color" 
             :style="{ background: color }" 
             class="color-dot" 
@@ -11,12 +11,12 @@
       </span>
     </div>
 
-    <van-cell-group inset title="規則">
+    <van-cell-group inset title="規則" id="tour-setup-rules">
       <van-field v-model="form.base" type="number" label="底" @keydown.enter="handleCreate" />
       <van-field v-model="form.tai" type="number" label="台" @keydown.enter="handleCreate" />
     </van-cell-group>
 
-    <van-cell-group inset title="玩家設定">
+    <van-cell-group inset title="玩家設定" id="tour-setup-players">
       <div v-for="(p, idx) in localPlayers" :key="idx" class="player-row">
         <div class="avatar-select" @click="changeAvatar(idx)">{{ p.avatar }}</div>
         <van-field v-model="p.name" :label="`位置 ${idx+1}`" placeholder="輸入名稱" @keydown.enter="handleCreate" />

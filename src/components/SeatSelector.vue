@@ -22,7 +22,7 @@
       <van-loading size="24px">正在讀取房間資料...</van-loading>
     </div>
 
-    <div v-else class="grid">
+    <div v-else class="grid" id="tour-seat-grid">
       <div v-for="p in store.players" :key="p.id" class="seat-card" @click="selectSeat(p.id)">
         <div class="avatar">{{ p.avatar }}</div>
         <div class="name">{{ p.name }}</div>

@@ -4,12 +4,12 @@
       <van-button icon="question-o" size="small" round @click="showHelp = true" class="help-btn">幫助</van-button>
     </div>
 
-    <div class="logo-area">
+    <div class="logo-area" id="tour-logo">
       <img src="@/assets/logo.png" alt="App Logo" class="app-logo" />
       <h1 class="app-title">麻將計分通</h1>
     </div>
 
-    <div class="action-area">
+    <div class="action-area" id="tour-actions">
       <van-button type="primary" size="large" class="action-btn create-btn" to="/create">
         創建房間
       </van-button>
@@ -19,7 +19,7 @@
       </van-button>
     </div>
 
-    <div class="qr-bubble" @click="showQr = true">
+    <div class="qr-bubble" @click="showQr = true" id="tour-qr">
       <van-icon name="qr" size="30" color="white" />
     </div>
 
@@ -30,7 +30,7 @@
       <van-button icon="link" round size="small" @click="copyLink">複製連結</van-button>
     </van-popup>
 
-    <HelpGuide v-model:show="showHelp" />
+    <HelpGuide v-model:show="showHelp" :steps="homeSteps" />
   </div>
 </template>
 
@@ -45,6 +45,24 @@ import HelpGuide from '../components/HelpGuide.vue';
 const currentUrl = ref('');
 const showQr = ref(false);
 const showHelp = ref(false);
+
+const homeSteps = [
+  {
+    target: '#tour-logo',
+    title: '歡迎使用麻將計分通！🀄️',
+    content: '這是一個專為台灣麻將設計的即時計分工具，支援自動算台、連莊追蹤與戰績匯出。'
+  },
+  {
+    target: '#tour-actions',
+    title: '快速開始',
+    content: '您可以選擇「創建房間」來開啟新局，或「輸入房號」加入好友的房間。'
+  },
+  {
+    target: '#tour-qr',
+    title: '分享應用',
+    content: '點擊這裡可以顯示應用的 QR Code，方便分享給現場的其他牌友快速加入。'
+  }
+];
 
 const store = useGameStore();
 
