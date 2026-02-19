@@ -145,13 +145,12 @@ export const useGameStore = defineStore('game', () => {
 
     // ✨ 自動判斷連線網址 (支援雲端與本機切換)
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const isHttps = window.location.protocol === 'https:';
 
-    // 如果是本機開發，通常後端跑在 3001
-    // 如果是雲端或正式部署，前端與後端通常在同一個 Origin
+    // 如果是本機開發，連線到 3001 埠
+    // 如果是雲端部署，直接使用當前 Origin (連線到標準 443 埠)
     const socketUrl = isLocal
-      ? `${isHttps ? 'https' : 'http'}://${window.location.hostname}:3001`
-      : `${window.location.protocol}//${window.location.host}`;
+      ? `http://${window.location.hostname}:3001`
+      : window.location.origin;
 
     console.log(`🚀 準備連線到後端: ${socketUrl}`);
 
@@ -222,46 +221,65 @@ export const useGameStore = defineStore('game', () => {
     let logAmount = 0;
     const winnerName = newPlayers.find(p => p.id === winnerId)?.name || '未知';
 
-    // Append details if provided
-    // const detailText = details ? ` (${details})` : ''; // User requested to hide details from main desc
+    const baseAmount = amount; // 傳入的 amount 已經是 (底 + 牌型台) 的總和
+    const taiAmount = Number(settings.value.tai); // 一台的金額
+    const extraTai = (dealerStreak.value * 2) + 1; // 莊家加台數 (2n+1)
+    const extraAmount = taiAmount * extraTai; // 莊家加台的金額
+
+    const payments = {}; // 記錄各玩家的具體金額
 
     if (loserId === null) {
       // 自摸
-      const baseAmount = amount; // 基本金額（基底分 + 台數分）
-      const taiAmount = Number(settings.value.tai); // 一台的金額
-
-      // 計算莊家多付的台數：2 × 連莊次數 + 1
-      const dealerExtraTai = (dealerStreak.value * 2) + 1;
-      const dealerAmount = baseAmount + (taiAmount * dealerExtraTai); // 莊家多付連莊台數
-
-      let totalWin = 0; // 贏家總收入
+      const isWinnerDealer = (winnerId === dealerId.value);
 
       newPlayers.forEach(p => {
-        if (p.id === winnerId) {
-          // 先計算贏家能收到多少
-          newPlayers.forEach(loser => {
-            if (loser.id !== winnerId) {
-              totalWin += (loser.id === dealerId.value) ? dealerAmount : baseAmount;
-            }
-          });
-          p.score += totalWin;
+        if (p.id === winnerId) return; // 贏家最後算
+
+        let pPay = 0;
+        if (isWinnerDealer) {
+          // 1. 莊家自摸：閒家（p）都要多付一加台
+          pPay = baseAmount + extraAmount;
         } else {
-          // 輸家付錢
-          p.score -= (p.id === dealerId.value) ? dealerAmount : baseAmount;
+          // 2. 閒家自摸：只有莊家（dealerId）要多付
+          pPay = (p.id === dealerId.value) ? (baseAmount + extraAmount) : baseAmount;
         }
+
+        p.score -= pPay;
+        logAmount += pPay;
+        payments[p.id] = { isPaid: false, amount: -pPay };
       });
 
+      // 贏家加總
+      newPlayers.find(p => p.id === winnerId).score += logAmount;
+      payments[winnerId] = { isPaid: true, amount: logAmount };
       logDesc = `自摸 ${taiCount} 台`;
-      logAmount = totalWin;
     } else {
       // 放槍
+      const isWinnerDealer = (winnerId === dealerId.value);
+      const isLoserDealer = (loserId === dealerId.value);
+
+      // 只要贏家或輸家中有一方是莊家，就要加台
+      const pPay = (isWinnerDealer || isLoserDealer) ? (baseAmount + extraAmount) : baseAmount;
+
       const winner = newPlayers.find(p => p.id === winnerId);
       const loser = newPlayers.find(p => p.id === loserId);
+
       if (winner && loser) {
-        winner.score += amount;
-        loser.score -= amount;
-        logDesc = `胡了 ${loser.name} ${taiCount} 台`; // Explicit "Won off Loser"
-        logAmount = amount;
+        winner.score += pPay;
+        loser.score -= pPay;
+        logAmount = pPay;
+
+        payments[winnerId] = { isPaid: true, amount: pPay };
+        payments[loserId] = { isPaid: false, amount: -pPay };
+
+        // 其他玩家 0 元
+        newPlayers.forEach(p => {
+          if (p.id !== winnerId && p.id !== loserId) {
+            payments[p.id] = { isPaid: true, amount: 0 };
+          }
+        });
+
+        logDesc = `胡了 ${loser.name} ${taiCount} 台`;
       }
     }
 
@@ -278,7 +296,7 @@ export const useGameStore = defineStore('game', () => {
       tiles: tiles || null,    // Store tile state
       dealerId: dealerId.value,  // 儲存當時的莊家 ID
       dealerStreak: dealerStreak.value,  // 儲存當時的連莊次數
-      payments: {} // 初始化支付狀態
+      payments: payments // 使用詳細計算後的支付記錄
     };
 
     // 發送給後端 Socket 同步
@@ -352,10 +370,14 @@ export const useGameStore = defineStore('game', () => {
   const calculateLianTai = (winnerId, loserId) => {
     if (dealerId.value === null) return 0;
 
-    const isDealerInvolved = (winnerId === dealerId.value) || (loserId === dealerId.value);
+    // 判斷莊家是否參與此次計分變動：
+    // 1. 贏家是莊家
+    // 2. 輸家是莊家 (放槍)
+    // 3. 局勢為自摸 (loserId === null)，則莊家必然作為輸家之一參與
+    const isDealerInvolved = (winnerId === dealerId.value) || (loserId === dealerId.value) || (loserId === null);
 
     if (isDealerInvolved) {
-      // Lian N -> 2*N + 1
+      // 連 N -> 2*N + 1
       return (dealerStreak.value * 2) + 1;
     }
     return 0;
@@ -418,6 +440,19 @@ export const useGameStore = defineStore('game', () => {
       roomId: roomId.value,
       logId: logId,
       playerId: playerId
+    });
+  };
+
+  /**
+   * 刪除某一局歷史記錄
+   */
+  const deleteLog = (logId) => {
+    if (!socket.value || !roomId.value) return;
+
+    // 發送刪除事件給後端
+    socket.value.emit('delete_log', {
+      roomId: roomId.value,
+      logId: logId
     });
   };
 

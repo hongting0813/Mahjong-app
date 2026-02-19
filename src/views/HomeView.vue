@@ -1,5 +1,9 @@
 <template>
   <div class="home-container">
+    <div class="home-header">
+      <van-button icon="question-o" size="small" round @click="showHelp = true" class="help-btn">幫助</van-button>
+    </div>
+
     <div class="logo-area">
       <img src="@/assets/logo.png" alt="App Logo" class="app-logo" />
       <h1 class="app-title">麻將計分通</h1>
@@ -25,6 +29,8 @@
       <p style="margin-top: 10px; color: #666; margin-bottom: 15px;">請掃描此 QR Code</p>
       <van-button icon="link" round size="small" @click="copyLink">複製連結</van-button>
     </van-popup>
+
+    <HelpGuide v-model:show="showHelp" />
   </div>
 </template>
 
@@ -33,10 +39,12 @@ import { ref, onMounted } from 'vue';
 import QrcodeVue from 'qrcode.vue';
 import { showToast } from 'vant';
 import { useGameStore } from '../stores/gameStore';
+import HelpGuide from '../components/HelpGuide.vue';
 
 // 取得當前網址 (首頁)
 const currentUrl = ref('');
 const showQr = ref(false);
+const showHelp = ref(false);
 
 const store = useGameStore();
 
@@ -96,7 +104,23 @@ onMounted(() => {
   overflow: hidden; /* Prevent scrolling */
   background: white;
 }
-/* ... existing styles ... */
+
+.home-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  padding: 15px;
+  display: flex;
+  justify-content: flex-end;
+  box-sizing: border-box;
+}
+
+.help-btn {
+  background: white;
+  border-color: #0b6623;
+  color: #0b6623;
+}
 
 
 .logo-area {

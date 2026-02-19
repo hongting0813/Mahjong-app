@@ -2,7 +2,7 @@
   <div class="table-view" :style="{ background: store.settings.bgColor }">
     <div class="header">
       <div class="room-info">底 {{ store.settings.base }} / 台 {{ store.settings.tai }}</div>
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; align-items: center;">
         <van-button icon="chart-trending-o" size="small" round type="primary" @click="showSettlementDialog = true">結算</van-button>
         <van-button icon="qr" size="small" round @click="showQr = true">邀請</van-button>
       </div>
@@ -171,6 +171,21 @@
                     * 標記為已付現的局數，將不計入結算表下方的「待結餘額」。
                 </div>
             </div>
+
+            <!-- 4. 刪除按鈕 (New Feature) -->
+            <div style="margin-top: 24px; border-top: 1px solid #eee; padding-top: 16px;">
+                 <van-button 
+                    type="danger" 
+                    plain 
+                    block 
+                    round 
+                    size="small"
+                    icon="delete-o"
+                    @click="handleDeleteLog"
+                 >
+                    刪除此筆記錄 (分數將會退回)
+                 </van-button>
+            </div>
         </div>
     </van-dialog>
 
@@ -234,7 +249,7 @@
     <!-- Settlement Dialog -->
     <van-dialog 
       v-model:show="showSettlementDialog" 
-      width="95%"
+      class="settlement-dialog-custom"
       :show-confirm-button="false"
       close-on-click-overlay
     >
@@ -364,10 +379,10 @@
                 </van-field>
 
                 <!-- 台數 -->
-                <van-field v-model="scoreForm.tai" type="number" name="tai" label="手牌台數" placeholder="輸入台數" :rules="[{ required: true, message: '請輸入台數' }]" />
+                <van-field v-model="scoreForm.tai" type="number" name="tai" label="牌型台數" placeholder="輸入台數" :rules="[{ required: true, message: '請輸入台數' }]" />
                 
                 <!-- 連莊設定 -->
-                <van-cell center title="計算連莊台數">
+                <van-cell center title="計算莊家台數">
                     <template #right-icon>
                         <van-switch v-model="scoreForm.includeLian" size="24" />
                     </template>
@@ -376,7 +391,7 @@
                     v-if="scoreForm.includeLian"
                     v-model="scoreForm.lianTai" 
                     type="number" 
-                    label="連莊台數" 
+                    label="莊家台數" 
                     placeholder="自動計算" 
                 />
                 
@@ -389,7 +404,16 @@
                     紀錄: {{ scoreForm.details }}
                 </div>
             </van-cell-group>
-            
+            <div style="margin-top: 15px; padding: 10px; background: #fdf6ec; border-radius: 8px; border: 1px solid #faecd8;">
+                <div style="font-size: 13px; font-weight: bold; color: #e6a23c; margin-bottom: 8px; text-align: left;">計分預覽</div>
+                <div v-for="p in store.players" :key="p.id" style="display: flex; justify-content: space-between; font-size: 13px; color: #666; margin-bottom: 4px;">
+                    <span>{{ p.name }} ({{ p.id === store.dealerId ? '莊' : '閒' }})</span>
+                    <span :style="{ fontWeight: 'bold', color: scorePreview[p.id] > 0 ? '#07c160' : (scorePreview[p.id] < 0 ? '#ee0a24' : '#999') }">
+                        {{ scorePreview[p.id] > 0 ? '+' : '' }}{{ scorePreview[p.id] !== 0 ? scorePreview[p.id] : '-' }}
+                    </span>
+                </div>
+            </div>
+
             <div style="margin: 16px;">
                 <van-button round block type="primary" native-type="submit">
                 確認記帳
@@ -415,7 +439,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import QrcodeVue from 'qrcode.vue';
-import { showToast, showDialog } from 'vant'; // Removed showDialog import if not used, but using van-dialog component
+import { showToast, showConfirmDialog } from 'vant';
 import CameraAI from './CameraAI.vue';
 import html2canvas from 'html2canvas';
 
@@ -1054,6 +1078,69 @@ const submitScore = () => {
   }, 300); // Small delay to allow modal transition
 };
 
+const scorePreview = computed(() => {
+    const preview = {};
+    store.players.forEach(p => preview[p.id] = 0);
+    
+    if (!showActionModal.value) return preview;
+    
+    const baseAmount = Number(scoreForm.base) || Number(store.settings.base);
+    const taiCount = Number(scoreForm.tai);
+    const lianCount = Number(scoreForm.lianTai);
+    const totalTransferred = baseAmount + (taiCount * Number(store.settings.tai));
+    
+    const extraTai = (store.dealerStreak * 2) + 1;
+    const extraAmount = Number(store.settings.tai) * extraTai;
+
+    const winnerId = scoreForm.winner;
+    const loserId = scoreForm.type === 'zimo' ? null : scoreForm.loser;
+    
+    if (loserId === null) {
+        // 自摸
+        const isWinnerDealer = (winnerId === store.dealerId);
+        let totalWin = 0;
+        store.players.forEach(p => {
+            if (p.id === winnerId) return;
+            const pPay = (isWinnerDealer || p.id === store.dealerId) 
+                         ? (totalTransferred + extraAmount) 
+                         : totalTransferred;
+            preview[p.id] = -pPay;
+            totalWin += pPay;
+        });
+        preview[winnerId] = totalWin;
+    } else {
+        // 放槍
+        const isWinnerDealer = (winnerId === store.dealerId);
+        const isLoserDealer = (loserId === store.dealerId);
+        const pPay = (isWinnerDealer || isLoserDealer) 
+                     ? (totalTransferred + extraAmount) 
+                     : totalTransferred;
+        preview[winnerId] = pPay;
+        preview[loserId] = -pPay;
+    }
+    return preview;
+});
+
+const handleDeleteLog = () => {
+    const logId = selectedLogId.value;
+    if (!logId) return;
+    
+    // 雖然 server 會檢查，但 UI 指導使用者僅刪除最後一筆較安全
+    const isLast = store.logs[0]?.id === logId;
+    const msg = isLast 
+        ? '確定要刪除這筆記錄嗎？分數將會自動撤銷。' 
+        : '⚠️ 注意：這不是最後一筆記錄，刪除雖然會退回分數，但可能導致莊家連莊狀態邏輯混亂，確定要繼續？';
+
+    showConfirmDialog({
+        title: '確認刪除',
+        message: msg,
+    }).then(() => {
+        store.deleteLog(logId);
+        showDetailDialog.value = false;
+        showToast('記錄已刪除並退回分數');
+    }).catch(() => {});
+};
+
 onMounted(() => {
   updateScale();
   window.addEventListener('resize', updateScale);
@@ -1230,11 +1317,7 @@ onUnmounted(() => {
 
 .qr-container { text-align: center; padding: 20px; }
 
-/* Settlement Dialog Styles */
-.settlement-container {
-    padding: 10px;
-    background: #f8f8f8;
-}
+/* 結算面板樣式已移至下方全域 style 以免 scoped 限制傳送 (teleport) 元件 */
 
 .settlement-report-header {
     text-align: center;
@@ -1291,7 +1374,7 @@ onUnmounted(() => {
 }
 
 .settlement-row {
-    padding: 8px 0;
+    padding: 6px 0;
     border-bottom: 1px solid #f0f0f0;
     font-size: 14px;
     transition: background 0.2s;
@@ -1352,4 +1435,40 @@ onUnmounted(() => {
 .no-data { padding: 40px; text-align: center; color: #ccc; }
 .settlement-actions { margin-top: 15px; }
 
+</style>
+
+<!-- 全域樣式：用於處理被 Teleport 到 body 的 Vant 對話框 -->
+<style lang="scss">
+.settlement-dialog-custom {
+    max-width: 500px !important;
+    max-height: 100vh !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate3d(-50%, -50%, 0) !important;
+    margin: 0 !important; /* 確保沒有邊距干擾置中 */
+}
+
+.settlement-container {
+    padding: 15px;
+    background: #f8f8f8;
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 讓內部 body 滾動就好 */
+}
+
+.settlement-report-header {
+    flex-shrink: 0; /* 標題不縮放 */
+}
+
+.settlement-body {
+    flex: 1; /* 表格佔據剩餘空間並可滾動 */
+    overflow-y: auto;
+}
+
+.settlement-unpaid, .settlement-footer {
+    flex-shrink: 0; /* 底部不縮放 */
+}
 </style>

@@ -324,6 +324,33 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('delete_log', ({ roomId, logId }) => {
+    if (rooms[roomId]) {
+      const logIndex = rooms[roomId].logs.findIndex(l => l.id === logId);
+      if (logIndex !== -1) {
+        const log = rooms[roomId].logs[logIndex];
+
+        // 撤銷分數：遍歷 payments 並加回金額
+        if (log.payments) {
+          Object.keys(log.payments).forEach(pId => {
+            const player = rooms[roomId].players.find(p => p.id === parseInt(pId));
+            if (player) {
+              // 記錄中減掉的，現在加回來；加過的，現在減掉
+              player.score -= (log.payments[pId].amount || 0);
+            }
+          });
+        }
+
+        // 移除記錄
+        rooms[roomId].logs.splice(logIndex, 1);
+
+        io.to(roomId).emit('state_updated', rooms[roomId]);
+        saveRooms();
+        console.log(`❌ Log ${logId} deleted and scores reverted in room ${roomId}`);
+      }
+    }
+  });
+
   socket.on('delete_room', (roomId) => {
     if (rooms[roomId]) {
       // 1. Delete from memory

@@ -7,26 +7,35 @@
       left-arrow
       @click-left="goHome"
       :border="false"
-    />
+    >
+        <template #right>
+          <van-icon name="question-o" size="22" @click="showHelp = true" />
+        </template>
+      </van-nav-bar>
     <!-- Navbar is now part of the flow, no fixed/placeholder needed -->
 
     <div class="room-content">
       <SeatSelector v-if="store.myPlayerId === null" />
       <MahjongTable v-else />
     </div>
+
+    <!-- 全局幫助指南 -->
+    <HelpGuide v-model:show="showHelp" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, computed } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
 import SeatSelector from '../components/SeatSelector.vue';
 import MahjongTable from '../components/MahjongTable.vue';
+import HelpGuide from '../components/HelpGuide.vue';
 
 const route = useRoute();
 const router = useRouter();
 const store = useGameStore();
+const showHelp = ref(false);
 
 const roomId = computed(() => route.params.roomId);
 
