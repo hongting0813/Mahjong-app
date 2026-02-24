@@ -309,10 +309,9 @@ export const useGameStore = defineStore('game', () => {
     // 儲存完整戰績記錄檔 (保存為 JSON)
     try {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const isHttps = window.location.protocol === 'https:';
       const apiUrlBase = isLocal
-        ? `${isHttps ? 'https' : 'http'}://${window.location.hostname}:3001`
-        : `${window.location.protocol}//${window.location.host}`;
+        ? `${window.location.protocol}//${window.location.hostname}:3001`
+        : window.location.origin;
 
       await axios.post(`${apiUrlBase}/api/save-game`, {
         roomId: roomId.value, // Added roomId

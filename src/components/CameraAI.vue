@@ -686,12 +686,14 @@ const triggerFileInput = () => {
 const processPrediction = async (base64) => {
   loading.value = true;
   try {
-    const ip = window.location.hostname;
-    const protocol = 'https:'; 
-    const port = '3001';
-    
+    // --- API Base URL Logic ---
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const apiUrlBase = isLocal 
+      ? `${window.location.protocol}//${window.location.hostname}:3001`
+      : window.location.origin;
+
     // Call server API which calls Roboflow
-    const res = await axios.post(`${protocol}//${ip}:${port}/api/predict`, { image: base64 });
+    const res = await axios.post(`${apiUrlBase}/api/predict`, { image: base64 });
 
     const predictions = res.data.predictions || [];
 
@@ -809,9 +811,12 @@ const uploadDebugImage = async (originalBase64, predictions) => {
       const debugBase64 = dbgCanvas.toDataURL("image/jpeg", 0.8);
       
       // Send to server
-      const ip = window.location.hostname;
-      const protocol = 'https:';
-      axios.post(`${protocol}//${ip}:3001/api/log-result`, {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const apiUrlBase = isLocal 
+        ? `${window.location.protocol}//${window.location.hostname}:3001`
+        : window.location.origin;
+
+      axios.post(`${apiUrlBase}/api/log-result`, {
         image: debugBase64,
         filename: `pred_${Date.now()}.jpg`
       }).then(resolve).catch(reject);
@@ -925,10 +930,12 @@ watch(showLogImport, (val) => {
 
 const fetchReports = async () => {
     try {
-        const ip = window.location.hostname;
-        const protocol = 'https:';
-        const port = '3001';
-        const res = await axios.get(`${protocol}//${ip}:${port}/api/reports`);
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const apiUrlBase = isLocal 
+          ? `${window.location.protocol}//${window.location.hostname}:3001`
+          : window.location.origin;
+
+        const res = await axios.get(`${apiUrlBase}/api/reports`);
         reportList.value = res.data || [];
     } catch (e) {
         console.error("Failed to fetch reports", e);
@@ -942,10 +949,12 @@ const formatTime = (ts) => {
 
 const loadReportFromServer = async (filename) => {
     try {
-        const ip = window.location.hostname;
-        const protocol = 'https:';
-        const port = '3001';
-        const res = await axios.get(`${protocol}//${ip}:${port}/api/report/${filename}`);
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const apiUrlBase = isLocal 
+          ? `${window.location.protocol}//${window.location.hostname}:3001`
+          : window.location.origin;
+
+        const res = await axios.get(`${apiUrlBase}/api/report/${filename}`);
         restoreState(res.data);
     } catch (e) {
         alert("讀取失敗");
@@ -986,9 +995,10 @@ const reportIssue = () => {
 
 const submitReport = async () => {
   try {
-    const ip = window.location.hostname;
-    const protocol = 'https:';
-    const port = '3001';
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const apiUrlBase = isLocal 
+      ? `${window.location.protocol}//${window.location.hostname}:3001`
+      : window.location.origin;
     
     // Gather all context
     const reportPayload = {
@@ -1005,7 +1015,7 @@ const submitReport = async () => {
     
     console.log("Sending report...", reportPayload);
 
-    await axios.post(`${protocol}//${ip}:${port}/api/report-error`, reportPayload);
+    await axios.post(`${apiUrlBase}/api/report-error`, reportPayload);
     alert("感謝您的回報！我們已紀錄此問題。");
   } catch (e) {
     console.error(e);
