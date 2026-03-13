@@ -143,23 +143,23 @@ export const useGameStore = defineStore('game', () => {
       return;
     }
 
-    // ✨ 自動判斷連線網址 (支援雲端與本機切換)
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const protocol = window.location.protocol; // http: 或 https:
+    // ✨ 透明轉發方案：統一連向當前 Origin
+    // 在開發環境下，Vite Proxy 會將 /socket.io 轉發至 3001
+    // 在生產環境下 (Zeabur)，Origin 即是後端位址
+    const socketUrl = window.location.origin;
 
-    // 如果是本機開發，連線到 3001 埠
-    // 如果是雲端部署，直接使用當前 Origin (連線到標準 443 埠)
-    const socketUrl = isLocal
-      ? `${protocol}//${window.location.hostname}:3001`
-      : window.location.origin;
-
-    console.log(`🚀 準備連線到後端: ${socketUrl}`);
+    console.log(`🚀 準備連線到後端 (透明轉發): ${socketUrl}`);
 
     // 建立 Socket 連線
     if (!socket.value) {
-      socket.value = io(socketUrl, {
-        reconnectionAttempts: 5    // 斷線重試 5 次
-      });
+      const socketOptions = {
+        reconnectionAttempts: 5,
+        // 自動判定是否需要 WSS
+        secure: window.location.protocol === 'https:',
+        rejectUnauthorized: false // 允許自簽憑證 (針對區網測試)
+      };
+
+      socket.value = io(socketUrl, socketOptions);
     } else {
       socket.value.connect();
     }

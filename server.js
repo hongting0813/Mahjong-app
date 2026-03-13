@@ -21,12 +21,13 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 2. 判斷環境與憑證 (支援雲端部署)
-const IS_PROD = process.env.NODE_ENV === 'production';
+const PORT = process.env.PORT || 3001;
+const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.PORT;
+
 const hasCerts = fs.existsSync('./key.pem') && fs.existsSync('./cert.pem');
 
 let httpServer;
 if (hasCerts && !IS_PROD) {
-  // 本機開發環境且有憑證，使用 HTTPS
   const httpsOptions = {
     key: fs.readFileSync('./key.pem'),
     cert: fs.readFileSync('./cert.pem')
@@ -45,6 +46,7 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"],
     credentials: true
   },
+  transports: ['websocket', 'polling'], // 確保相容性
   allowEIO3: true
 });
 
@@ -374,7 +376,6 @@ app.get(/.*/, (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
 
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
